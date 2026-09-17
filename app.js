@@ -16,7 +16,7 @@ const metadataCache = new Map();
 const areaDatasetCache = new Map();
 
 const labels = {
-  country: 'Country / region', callingCode: 'Calling code', countryCode: 'Country code', area: 'Numbering area', carrier: 'Original carrier', timezones: 'Likely time zone(s)',
+  country: 'Country / region', callingCode: 'Calling code', countryCode: 'Country code', area: 'Numbering area', continent: 'Continent', subregion: 'Subregion', capital: 'Capital', languages: 'Languages', currencies: 'Currencies', carrier: 'Original carrier', timezones: 'Likely time zone(s)',
   national: 'National format', international: 'International format', uri: 'Tel URI',
   type: 'Number type', possible: 'Possible length', digits: 'Digits', extension: 'Extension'
 };
