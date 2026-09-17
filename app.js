@@ -160,6 +160,12 @@ document.querySelector('#search-button').addEventListener('click', () => {
   window.open(`https://duckduckgo.com/?q=${query}`, '_blank', 'noopener,noreferrer');
 });
 
+document.querySelector('#business-search-button').addEventListener('click', () => {
+  if (!currentResult) return;
+  const query = encodeURIComponent(`"${currentResult.international}" (business OR company OR contact OR services)`);
+  window.open(`https://duckduckgo.com/?q=${query}`, '_blank', 'noopener,noreferrer');
+});
+
 document.querySelector('#clear-button').addEventListener('click', () => { results.hidden = true; input.focus(); });
 document.querySelector('#clear-history').addEventListener('click', () => { localStorage.removeItem(historyKey); renderHistory(); });
 history.addEventListener('click', (event) => { const button = event.target.closest('[data-number]'); if (button) { input.value = button.dataset.number; form.requestSubmit(); } });
