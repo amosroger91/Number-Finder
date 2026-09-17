@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="A privacy-conscious phone number format and metadata checker.">
+  <title>Number Finder | Phone Metadata</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,600;1,500&family=Montserrat:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <a class="wordmark" href="./" aria-label="Number Finder home">
+      <span class="wordmark-mark" aria-hidden="true">N°</span>
+      <span>NUMBER FINDER</span>
+    </a>
+    <span class="header-note">LOCAL-FIRST / PUBLIC METADATA</span>
+  </header>
+
+  <main>
+    <section class="hero" aria-labelledby="page-title">
+      <div class="hero-copy">
+        <p class="eyebrow">A clearer signal</p>
+        <h1 id="page-title">Know the number<br><em>before you answer.</em></h1>
+        <p class="hero-description">A fast, private read on a phone number's numbering plan, format, and likely category. No account. No tracking. No people-search claims.</p>
+      </div>
+      <div class="signal-card" aria-label="What this tool checks">
+        <div class="signal-top"><span class="signal-dot"></span><span>NUMBER INTELLIGENCE</span></div>
+        <div class="signal-line"><span class="line-label">SCOPE</span><strong>FORMAT + VALIDITY</strong></div>
+        <div class="signal-line"><span class="line-label">DATA</span><strong>LIBPHONENUMBER</strong></div>
+        <div class="signal-line"><span class="line-label">STORAGE</span><strong>YOUR BROWSER</strong></div>
+      </div>
+    </section>
+
+    <section class="workspace" aria-labelledby="lookup-title">
+      <div class="section-heading">
+        <p class="eyebrow">Start here</p>
+        <h2 id="lookup-title">Inspect a number</h2>
+      </div>
+      <form id="lookup-form" class="lookup-form">
+        <label class="phone-field">
+          <span>Phone number</span>
+          <input id="phone-input" name="phone" type="tel" inputmode="tel" autocomplete="tel" placeholder="+1 479 785 2929" required>
+        </label>
+        <label class="region-field">
+          <span>Default region</span>
+          <select id="region-select" name="region" aria-label="Default region">
+            <option value="US">United States</option>
+            <option value="CA">Canada</option>
+            <option value="GB">United Kingdom</option>
+            <option value="AU">Australia</option>
+            <option value="IN">India</option>
+            <option value="MX">Mexico</option>
+            <option value="BR">Brazil</option>
+            <option value="DE">Germany</option>
+            <option value="FR">France</option>
+            <option value="JP">Japan</option>
+          </select>
+        </label>
+        <button class="primary-button" type="submit">Analyze number <span aria-hidden="true">↗</span></button>
+      </form>
+      <p class="form-hint">Use <strong>+</strong> and the country calling code for the most reliable result.</p>
+      <p id="error-message" class="error-message" role="alert" hidden></p>
+
+      <div id="results" class="results" hidden>
+        <div class="result-header">
+          <div>
+            <p class="eyebrow">Analysis complete</p>
+            <h2 id="result-title">Number details</h2>
+          </div>
+          <div class="result-actions">
+            <button id="copy-button" class="text-button" type="button">Copy JSON</button>
+            <button id="clear-button" class="text-button" type="button">Clear</button>
+          </div>
+        </div>
+        <div id="status-banner" class="status-banner"></div>
+        <div id="result-grid" class="result-grid"></div>
+        <div class="privacy-callout">
+          <span class="callout-icon" aria-hidden="true">i</span>
+          <p><strong>What this does not reveal:</strong> a private owner's name, live location, address, or identity. Those claims require a lawful, consent-based data provider and should never be inferred from numbering metadata.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="recent-section" aria-labelledby="recent-title">
+      <div class="recent-heading"><h2 id="recent-title">Recent checks</h2><button id="clear-history" class="text-button" type="button">Clear history</button></div>
+      <div id="history" class="history-list"><p class="empty-state">Your recent checks will appear here, on this device only.</p></div>
+    </section>
+  </main>
+
+  <footer class="site-footer"><span>NUMBER FINDER</span><span>Static, private, transparent.</span></footer>
+  <script type="module" src="app.js"></script>
+</body>
+</html>
