@@ -13,6 +13,7 @@ const history = document.querySelector('#history');
 const historyKey = 'number-finder-history';
 let currentResult = null;
 const metadataCache = new Map();
+const areaDatasetCache = new Map();
 
 const labels = {
   country: 'Country / region', callingCode: 'Calling code', countryCode: 'Country code', area: 'Numbering area', carrier: 'Original carrier', timezones: 'Likely time zone(s)',
@@ -57,6 +58,25 @@ async function prefixMetadata(kind, countryCallingCode, digits) {
   return null;
 }
 
+async function areaCodeLocation(phone) {
+  if (phone.country !== 'US' && phone.country !== 'CA') return null;
+  const country = phone.country.toLowerCase();
+  let rows = areaDatasetCache.get(country);
+  if (!rows) {
+    const file = country === 'us' ? 'us-area-code-cities.csv' : 'ca-area-code-cities.csv';
+    const response = await fetch(`https://raw.githubusercontent.com/ravisorg/Area-Code-Geolocation-Database/master/${file}`);
+    if (!response.ok) return null;
+    rows = (await response.text()).split(/\r?\n/);
+    areaDatasetCache.set(country, rows);
+  }
+  const code = phone.nationalNumber.slice(0, 3);
+  const locations = rows.filter((row) => row.startsWith(`${code},`)).slice(0, 5).map((row) => {
+    const match = row.match(/^\d{3},(".*?"|[^,]+),(".*?"|[^,]+),/);
+    return match ? `${match[1].replaceAll('"', '')}, ${match[2].replaceAll('"', '')}` : null;
+  }).filter(Boolean);
+  return [...new Set(locations)].join(' / ') || null;
+}
+
 async function renderResult(phone) {
   const country = phone.country || 'Unknown';
   const [originalCarrier, numberingArea, timezones] = await Promise.all([
@@ -64,11 +84,12 @@ async function renderResult(phone) {
     prefixMetadata('geocodes', phone.countryCallingCode, phone.nationalNumber).catch(() => null),
     prefixMetadata('timezone', phone.countryCallingCode, phone.number.replace(/^\+/, '')).catch(() => null)
   ]);
+  const datasetArea = numberingArea || await areaCodeLocation(phone).catch(() => null);
   const data = {
     country: country === 'Unknown' ? country : new Intl.DisplayNames(['en'], { type: 'region' }).of(country),
     callingCode: `+${phone.countryCallingCode}`,
     countryCode: country,
-    area: numberingArea || areaDescription(phone),
+    area: datasetArea || areaDescription(phone),
     carrier: originalCarrier || 'Not available in prefix metadata',
     timezones: timezones || 'Not available in prefix metadata',
     national: phone.formatNational(),
