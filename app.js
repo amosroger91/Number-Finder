@@ -1,5 +1,5 @@
 import { parsePhoneNumberFromString } from 'https://cdn.jsdelivr.net/npm/libphonenumber-js@1.11.20/+esm';
-import { deserialize } from 'https://cdn.jsdelivr.net/npm/bson@6.10.4/+esm';
+import { deserialize } from 'https://cdn.jsdelivr.net/npm/bson@6.10.4/lib/bson.mjs';
 
 const form = document.querySelector('#lookup-form');
 const input = document.querySelector('#phone-input');
