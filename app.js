@@ -14,7 +14,6 @@ const historyKey = 'number-finder-history';
 let currentResult = null;
 const metadataCache = new Map();
 const areaDatasetCache = new Map();
-const countryCache = new Map();
 
 const labels = {
   country: 'Country / region', callingCode: 'Calling code', countryCode: 'Country code', area: 'Numbering area', continent: 'Continent', subregion: 'Subregion', capital: 'Capital', languages: 'Languages', currencies: 'Currencies', carrier: 'Original carrier', lineType: 'Block line type', rateCenter: 'Rate center', timezones: 'Likely time zone(s)',
@@ -78,18 +77,6 @@ async function areaCodeLocation(phone) {
   return [...new Set(locations)].join(' / ') || null;
 }
 
-async function countryDetails(countryCode) {
-  if (!countryCode || countryCode === 'Unknown') return null;
-  if (!countryCache.has(countryCode)) {
-    const request = fetch(`https://restcountries.com/v3.1/alpha/${countryCode}`)
-      .then((response) => response.ok ? response.json() : null)
-      .then((countries) => countries?.[0] || null)
-      .catch(() => null);
-    countryCache.set(countryCode, request);
-  }
-  return countryCache.get(countryCode);
-}
-
 async function nanpCarrier(phone) {
   if (phone.country !== 'US' && phone.country !== 'CA') return null;
   const response = await fetch(`https://areacode.fyi/api/v1/carrier/${phone.nationalNumber}`);
@@ -107,19 +94,11 @@ async function renderResult(phone) {
     nanpCarrier(phone).catch(() => null)
   ]);
   const datasetArea = numberingArea || await areaCodeLocation(phone).catch(() => null);
-  const countryInfo = await countryDetails(country);
-  const countryCurrencies = countryInfo?.currencies ? Object.entries(countryInfo.currencies).map(([code, currency]) => `${currency.name} (${code})`).join(', ') : null;
-  const countryLanguages = countryInfo?.languages ? Object.values(countryInfo.languages).join(', ') : null;
   const data = {
     country: country === 'Unknown' ? country : new Intl.DisplayNames(['en'], { type: 'region' }).of(country),
     callingCode: `+${phone.countryCallingCode}`,
     countryCode: country,
     area: datasetArea || areaDescription(phone),
-    continent: countryInfo?.region || 'Not available',
-    subregion: countryInfo?.subregion || 'Not available',
-    capital: countryInfo?.capital?.join(', ') || 'Not available',
-    languages: countryLanguages || 'Not available',
-    currencies: countryCurrencies || 'Not available',
     carrier: nanpData?.carrier || originalCarrier || 'Not available in prefix metadata',
     lineType: nanpData?.line_type || typeName(phone.getType()),
     rateCenter: nanpData?.rate_center || 'Not available',

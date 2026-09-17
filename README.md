@@ -35,7 +35,7 @@ No configuration is required. There are no secrets or environment variables.
 
 ## Usage
 
-Enter a phone number with a country calling code, or select a likely region before entering a national-format number. The app reports local numbering-plan metadata, fetches no-key carrier/geography/timezone prefix metadata from jsDelivr, adds country context from REST Countries, falls back to a public area-code dataset on GitHub for North American city/state coverage, shows the original NANP area code when applicable, opens an exact-number DuckDuckGo search, and lets you copy a JSON result. Carrier metadata is historical/original assignment data; current carrier and scam reputation require a live provider.
+Enter a phone number with a country calling code, or select a likely region before entering a national-format number. The app reports local numbering-plan metadata, fetches no-key carrier/geography/timezone prefix metadata from jsDelivr, falls back to a public area-code dataset on GitHub for North American city/state coverage, shows the original NANP area code when applicable, opens an exact-number DuckDuckGo search, and lets you copy a JSON result. Carrier metadata is historical/original assignment data; current carrier and scam reputation require a live provider.
 
 ## Project structure
 
