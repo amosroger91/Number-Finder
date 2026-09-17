@@ -49,6 +49,13 @@ input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 2px #b9
 .result-item dt { color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .1em; margin-bottom: 10px; text-transform: uppercase; }
 .result-item dd { color: var(--ink); font-size: 15px; font-weight: 600; margin: 0; overflow-wrap: anywhere; }
 .source-note { color: var(--muted); font-size: 10px; line-height: 1.6; margin: 15px 0 0; }
+.business-results { background: #fff; border: 1px solid var(--line); margin-top: 18px; padding: 18px; }
+.business-results-heading { align-items: baseline; display: flex; justify-content: space-between; margin-bottom: 12px; }
+.business-results-heading strong { color: var(--ink); font-size: 13px; }
+.business-result { border-top: 1px solid var(--line); padding: 13px 0 2px; }
+.business-result a { color: var(--blue); font-size: 13px; font-weight: 600; text-decoration: none; }
+.business-result a:hover { text-decoration: underline; }
+.business-result p { color: var(--muted); font-size: 11px; line-height: 1.55; margin: 5px 0 0; }
 .coverage-grid { display: grid; gap: 14px; grid-template-columns: repeat(2, 1fr); margin-top: 18px; }
 .coverage-card { background: #fff; border: 1px solid var(--line); padding: 18px; }
 .coverage-label { color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .1em; margin-bottom: 11px; text-transform: uppercase; }

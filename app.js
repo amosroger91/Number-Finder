@@ -162,8 +162,31 @@ document.querySelector('#search-button').addEventListener('click', () => {
 
 document.querySelector('#business-search-button').addEventListener('click', () => {
   if (!currentResult) return;
-  const query = encodeURIComponent(`"${currentResult.international}" (business OR company OR contact OR services)`);
-  window.open(`https://duckduckgo.com/?q=${query}`, '_blank', 'noopener,noreferrer');
+  const businessResults = document.querySelector('#business-results');
+  const businessStatus = document.querySelector('#business-results-status');
+  const businessContent = document.querySelector('#business-results-content');
+  const query = encodeURIComponent(`"${currentResult.international}" business`);
+  businessResults.hidden = false;
+  businessStatus.textContent = 'Searching...';
+  businessContent.innerHTML = '';
+  fetch(`https://api.duckduckgo.com/?q=${query}&format=json&no_html=1&skip_disambig=1`)
+    .then((response) => {
+      if (!response.ok) throw new Error('DuckDuckGo did not return a response.');
+      return response.json();
+    })
+    .then((payload) => {
+      const items = [];
+      if (payload.AbstractText && payload.AbstractURL) items.push({ title: payload.Heading || 'DuckDuckGo answer', url: payload.AbstractURL, text: payload.AbstractText });
+      const collectTopics = (topics) => topics?.forEach((topic) => topic.Topics ? collectTopics(topic.Topics) : topic.FirstURL && items.push({ title: topic.Text?.split(' - ')[0] || 'Related result', url: topic.FirstURL, text: topic.Text || '' }));
+      collectTopics(payload.RelatedTopics);
+      const uniqueItems = items.filter((item, index, list) => list.findIndex((candidate) => candidate.url === item.url) === index).slice(0, 8);
+      businessStatus.textContent = uniqueItems.length ? `${uniqueItems.length} result${uniqueItems.length === 1 ? '' : 's'} found` : 'No instant-answer results found';
+      businessContent.innerHTML = uniqueItems.length ? uniqueItems.map((item) => `<article class="business-result"><a href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(item.title)}</a><p>${escapeHTML(item.text)}</p></article>`).join('') : '<p class="empty-state">DuckDuckGo returned no business-related instant answers for this number.</p>';
+    })
+    .catch((error) => {
+      businessStatus.textContent = 'Search unavailable';
+      businessContent.innerHTML = `<p class="empty-state">${escapeHTML(error.message)}</p>`;
+    });
 });
 
 document.querySelector('#clear-button').addEventListener('click', () => { results.hidden = true; input.focus(); });
