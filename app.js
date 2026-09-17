@@ -13,7 +13,7 @@ const historyKey = 'number-finder-history';
 let currentResult = null;
 
 const labels = {
-  country: 'Country / region', callingCode: 'Calling code', countryCode: 'Country code',
+  country: 'Country / region', callingCode: 'Calling code', countryCode: 'Country code', area: 'Numbering area',
   national: 'National format', international: 'International format', uri: 'Tel URI',
   type: 'Number type', possible: 'Possible length', digits: 'Digits', extension: 'Extension'
 };
@@ -30,12 +30,20 @@ function typeName(type) {
   return ({ MOBILE: 'Mobile', FIXED_LINE: 'Landline', FIXED_LINE_OR_MOBILE: 'Landline or mobile', TOLL_FREE: 'Toll-free', PREMIUM_RATE: 'Premium rate', VOIP: 'VoIP', PAGER: 'Pager', UAN: 'Universal access', VOICEMAIL: 'Voicemail' })[type] || 'Unknown';
 }
 
+function areaDescription(phone) {
+  if (phone.country === 'US' || phone.country === 'CA') {
+    return `NANP area code ${phone.nationalNumber.slice(0, 3)} (original assignment)`;
+  }
+  return phone.country ? 'Country-level numbering region' : 'Not available';
+}
+
 function renderResult(phone) {
   const country = phone.country || 'Unknown';
   const data = {
     country: country === 'Unknown' ? country : new Intl.DisplayNames(['en'], { type: 'region' }).of(country),
     callingCode: `+${phone.countryCallingCode}`,
     countryCode: country,
+    area: areaDescription(phone),
     national: phone.formatNational(),
     international: phone.formatInternational(),
     uri: phone.getURI(),
@@ -85,6 +93,12 @@ document.querySelector('#copy-button').addEventListener('click', async () => {
   await navigator.clipboard.writeText(JSON.stringify(currentResult, null, 2));
   document.querySelector('#copy-button').textContent = 'Copied';
   setTimeout(() => { document.querySelector('#copy-button').textContent = 'Copy JSON'; }, 1500);
+});
+
+document.querySelector('#search-button').addEventListener('click', () => {
+  if (!currentResult) return;
+  const query = encodeURIComponent(`"${currentResult.international}"`);
+  window.open(`https://duckduckgo.com/?q=${query}`, '_blank', 'noopener,noreferrer');
 });
 
 document.querySelector('#clear-button').addEventListener('click', () => { results.hidden = true; input.focus(); });

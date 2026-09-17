@@ -35,7 +35,7 @@ No configuration is required. There are no secrets or environment variables.
 
 ## Usage
 
-Enter a phone number with a country calling code, or select a likely region before entering a national-format number. The app reports local numbering-plan metadata and lets you copy a JSON result.
+Enter a phone number with a country calling code, or select a likely region before entering a national-format number. The app reports local numbering-plan metadata, shows the original NANP area code when applicable, opens an exact-number DuckDuckGo search, and lets you copy a JSON result. Carrier and scam reputation checks require a separate provider and are intentionally not faked by the static app.
 
 ## Project structure
 

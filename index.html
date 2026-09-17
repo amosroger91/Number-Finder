@@ -71,15 +71,28 @@
             <h2 id="result-title">Number details</h2>
           </div>
           <div class="result-actions">
+            <button id="search-button" class="text-button" type="button">Search DuckDuckGo</button>
             <button id="copy-button" class="text-button" type="button">Copy JSON</button>
             <button id="clear-button" class="text-button" type="button">Clear</button>
           </div>
         </div>
         <div id="status-banner" class="status-banner"></div>
         <div id="result-grid" class="result-grid"></div>
+        <div class="coverage-grid">
+          <article class="coverage-card">
+            <p class="coverage-label">Carrier</p>
+            <strong>Not checked</strong>
+            <p>Current carrier data requires an HLR or carrier intelligence provider. The numbering plan alone cannot identify it.</p>
+          </article>
+          <article class="coverage-card">
+            <p class="coverage-label">Scam reputation</p>
+            <strong>Not checked</strong>
+            <p>No reputation database is bundled into this static site. A valid number can still be used for spam or fraud.</p>
+          </article>
+        </div>
         <div class="privacy-callout">
           <span class="callout-icon" aria-hidden="true">i</span>
-          <p><strong>What this does not reveal:</strong> a private owner's name, live location, address, or identity. Those claims require a lawful, consent-based data provider and should never be inferred from numbering metadata.</p>
+          <p><strong>What this does not reveal:</strong> a private owner's name, live location, address, or identity. Those claims require a lawful, consent-based data provider and should never be inferred from numbering metadata. The DuckDuckGo button opens a search in a new tab; results are supplied by DuckDuckGo, not this app.</p>
         </div>
       </div>
     </section>
