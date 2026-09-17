@@ -25,6 +25,10 @@ python -m http.server 8000
 
 Then visit `http://localhost:8000`.
 
+## GitHub Pages
+
+Push the repository to GitHub, then enable **Settings → Pages → GitHub Actions** as the source. The included workflow deploys every push to `main`.
+
 ## Configuration
 
 No configuration is required. There are no secrets or environment variables.
