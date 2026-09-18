@@ -56,7 +56,7 @@ function formatVariants(phone) {
   const variants = new Set([phone.number, phone.formatInternational(), phone.formatNational(), national, `+${cc}${national}`]);
   if (national.length === 10) {
     const [npa, nxx, line] = [national.slice(0, 3), national.slice(3, 6), national.slice(6)];
-    for (const body of [`${npa}-${nxx}-${line}`, `(${npa}) ${nxx}-${line}`, `${npa}.${nxx}.${line}`, `${npa} ${nxx} ${line}`]) {
+    for (const body of [`${npa}-${nxx}-${line}`, `(${npa}) ${nxx}-${line}`, `${npa}.${nxx}.${line}`, `${npa} ${nxx} ${line}`, `${npa} ${nxx}${line}`, `${npa}-${nxx}${line}`]) {
       variants.add(body);
       variants.add(`+${cc} ${body}`);
       variants.add(`+${cc}-${body}`);
@@ -127,28 +127,51 @@ export function fccAdvertisedBy(phone) {
 }
 
 // --- OpenStreetMap via Overpass --------------------------------------------------------------
-// Exact-value lookups are indexed and return in about a second. The loose regex fallback must stay
-// scoped to a country area; run unscoped it reliably times out on the public server.
+// Matching is by exact tag value across every common spelling of the number, which is indexed and
+// returns in about a second.
 
-// The public instances rate-limit independently and each returns 504 under load, so a failure on
-// one is routine rather than fatal. Whichever answers first wins.
+// The main instance answers in about a second when it answers at all, but under load it returns
+// 504 or 429 perhaps half the time. Those refusals come back fast (~10s), and an immediate retry
+// usually succeeds, so it is queued again as a final attempt. The alternate instances are kept as
+// genuine backups even though they have been measured at over two minutes under load.
 const OVERPASS_MIRRORS = [
   'https://overpass-api.de/api/interpreter',
   'https://overpass.kumi.systems/api/interpreter',
   'https://overpass.private.coffee/api/interpreter'
 ];
+const OVERPASS_ATTEMPTS = [...OVERPASS_MIRRORS, OVERPASS_MIRRORS[0]];
 
-async function overpass(query, timeout = 45000) {
-  let lastError;
-  for (const endpoint of OVERPASS_MIRRORS) {
-    try {
-      const response = await request(endpoint, { method: 'POST', body: new URLSearchParams({ data: query }), timeout });
-      return (await response.json()).elements || [];
-    } catch (error) {
-      lastError = error;
+// How long an attempt gets to answer before the next one is also dialled.
+const HEDGE_MS = 3500;
+
+// Hedged rather than sequential. Any one instance can be rate-limiting the caller or minutes
+// behind under load, and trying them in turn means paying every timeout before reaching a healthy
+// one. Each mirror is started after a short stagger and the first usable response wins, so a
+// healthy primary still answers alone and a slow one no longer blocks the lookup.
+function overpass(query, timeout = 45000) {
+  const controllers = OVERPASS_ATTEMPTS.map(() => new AbortController());
+  let won = false;
+
+  const attempts = OVERPASS_ATTEMPTS.map((endpoint, index) => (async () => {
+    if (index) {
+      await new Promise((resolve) => setTimeout(resolve, HEDGE_MS * index));
+      if (won) throw new Error('superseded');
     }
-  }
-  throw lastError ?? new Error('No Overpass mirror available');
+    const timer = setTimeout(() => controllers[index].abort(), timeout);
+    try {
+      const response = await fetch(endpoint, { method: 'POST', body: new URLSearchParams({ data: query }), signal: controllers[index].signal });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const data = await response.json();
+      won = true;
+      controllers.forEach((controller, other) => { if (other !== index) controller.abort(); });
+      return data.elements || [];
+    } finally {
+      clearTimeout(timer);
+    }
+  })());
+
+  // Promise.any collects the rejections, so aborting the losers cannot surface as an unhandled one.
+  return Promise.any(attempts).catch(() => { throw new Error('No Overpass mirror available'); });
 }
 
 function osmEntry(element) {
@@ -172,21 +195,14 @@ export function osmListings(phone) {
       const escaped = value.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
       return [`nwr["phone"="${escaped}"];`, `nwr["contact:phone"="${escaped}"];`];
     }).join('');
+    // Exact-value lookups only. A digit-tolerant regex scan was measured against 400 real US phone
+    // tags and would have rescued 1 of them (0.25%), because the spellings above already cover
+    // 99.8%. It cost 28-45s on every number absent from OSM -- which is most of them -- so the
+    // coverage was not worth making the common case slow and rate-limited.
+    // Capped: Overpass queues rather than refusing when its slots are busy, so an uncapped wait
+    // would let the listings section stall long after the rest of the report is complete.
     const exact = await overpass(`[out:json][timeout:25];(${clauses});out center 10;`, 20000);
-    if (exact.length) return exact.map(osmEntry).filter((entry) => entry.name);
-
-    // Nothing matched a known spelling: fall back to a digit-tolerant scan inside the number's own
-    // country, which catches unusual punctuation. It is far slower than the indexed lookup above,
-    // so it is given a hard ceiling rather than being allowed to hold up the whole report.
-    const national = phone.nationalNumber;
-    if (!phone.country || national.length < 7) return [];
-    const loose = [...national].join('[^0-9]*');
-    const scoped = await overpass(
-      `[out:json][timeout:40];area["ISO3166-1"="${phone.country}"][admin_level=2]->.a;` +
-      `nwr(area.a)[~"^(phone|contact:phone)$"~"${loose}"];out center 10;`,
-      35000
-    );
-    return scoped.map(osmEntry).filter((entry) => entry.name);
+    return exact.map(osmEntry).filter((entry) => entry.name);
   });
 }
 
