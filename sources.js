@@ -197,7 +197,9 @@ export function osmListings(phone) {
 export function wikidataListings(phone) {
   return once(`wd:${phone.number}`, async () => {
     const national = phone.nationalNumber;
-    const targets = [`${phone.countryCallingCode}${national}`, national].map((value) => `"${value}"`).join(' ');
+    // Comma-separated: SPARQL's IN takes an expression list. (VALUES uses spaces; they are not
+    // interchangeable, and a space-separated list is a parse error, not an empty result.)
+    const targets = [`${phone.countryCallingCode}${national}`, national].map((value) => `"${value}"`).join(', ');
     const query = `SELECT ?item ?itemLabel ?phone ?website ?kindLabel WHERE {
       ?item wdt:P1329 ?phone .
       FILTER(REPLACE(?phone, "[^0-9]", "") IN (${targets}))
