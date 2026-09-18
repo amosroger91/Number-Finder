@@ -43,7 +43,7 @@ Runs entirely in the browser. No account, no server, no database, no tracking, a
 | **Overpass / OpenStreetMap** | `overpass-api.de/api/interpreter` (+2 mirrors) | Direct | Business name, address, website, category |
 | **Wikidata** | `query.wikidata.org/sparql` | Direct | Organisations via property `P1329`, plus website (`P856`) and type (`P31`) |
 | **SEC EDGAR** | `efts.sec.gov/LATEST/search-index` | Relayed | Public companies and registrants whose filings print the number |
-| **CMS NPPES** | `download.cms.gov/nppes/` | Build-time | Healthcare organisations: practice name, NPI, city/state, specialty |
+| **CMS NPPES** | `download.cms.gov/nppes/` | Build-time | ~1.97M healthcare organisations: practice name, NPI, city/state, specialty |
 
 ### Risk and carrier
 
@@ -62,7 +62,7 @@ Runs entirely in the browser. No account, no server, no database, no tracking, a
 | **Area-Code-Geolocation-Database** | `raw.githubusercontent.com/ravisorg/...` | Direct | Area-code geography; build input for `data/nanp.json` |
 | **`data/nanp.json`** | bundled, generated | None | 336 NANP area codes for offline structural checks |
 | **`data/ftc/`** | generated in CI | None | ~264k numbers sharded by NPA + exchange digit |
-| **`data/nppes/`** | generated in CI | None | Healthcare organisations, same shard geometry |
+| **`data/nppes/`** | generated in CI | None | 1.45M numbers across 4,162 shards (191 MB) |
 
 Relays used for the two CORS-less sources: `r.jina.ai`, then `api.allorigins.win`.
 
@@ -92,7 +92,7 @@ The files serve **no CORS headers**, and the official `api.ftc.gov` endpoint req
 
 *This is a recency signal, not a history.* The published window is about five weeks, so the two federal datasets answer different questions — the FCC's top robocaller in this repo's tests (715 complaints, last active 2021) does not appear in the FTC window at all. **The totals are never added together**: a consumer may report the same call to both agencies, so summing would double-count. The heavier of the two is scored, the other is shown beside it, and appearing in both is its own signal.
 
-**CMS NPPES** — the national provider registry, published as a **1.08 GB monthly ZIP** containing a multi-gigabyte CSV of ~330 columns. The keyless NPI API cannot search by phone number, so reverse lookup requires the bulk file, which is too large to query live and far too large to commit. `data/build-nppes.mjs` streams it (`unzip -p` piped into a parser that splits only as far as the last column of interest, never extracting the CSV to disk, which would need ~10 GB of scratch space) and reduces it to the same shard geometry as the FTC data.
+**CMS NPPES** — the national provider registry, published as a **1.08 GB monthly ZIP** containing a multi-gigabyte CSV of ~330 columns. The keyless NPI API cannot search by phone number, so reverse lookup requires the bulk file, which is too large to query live and far too large to commit. `data/build-nppes.mjs` streams it (`unzip -p` piped into a parser that splits only as far as the last column of interest, never extracting the CSV to disk, which would need ~10 GB of scratch space) and reduces it to the same shard geometry as the FTC data: **9.8M rows to 1,972,058 organisations and 1,449,025 distinct numbers, 191 MB across 4,162 shards** (median 16 kB, largest 515 kB). The build takes about 130 seconds on a hosted runner, then comes from cache.
 
 **Only Entity Type 2 — organisations — is indexed.** Type 1 records are individual clinicians, and this project does not identify private individuals. For the same reason the *Authorized Official Telephone Number* column is skipped even on organisation records: it is a named person's direct line, not the organisation's published number. Deactivated NPIs are dropped, and registry placeholders like `0000000000` are rejected by NANP structural rules.
 
