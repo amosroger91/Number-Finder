@@ -72,21 +72,56 @@ function prefixSignals(prefix) {
   return out;
 }
 
-// FCC consumer complaints: unverified, but volume and geographic spread separate a local nuisance
-// from an industrial robocall operation.
-function complaintSignals(complaints) {
-  if (!complaints || complaints.total === 0) return [];
-  const { total, states, topType, advertisers } = complaints;
+// Volume on a log scale plus geographic spread: both separate a local nuisance from an industrial
+// dialling operation, where one number reaches consumers in dozens of states.
+function complaintWeight(total, states, base) {
   const spread = states >= 10 ? 15 : states >= 4 ? 8 : 0;
-  const weight = Math.min(78, 12 + Math.round(Math.log10(total) * 22) + spread);
-  const out = [signal(total >= 10 ? 'danger' : 'warn', weight,
-    `${total} FCC complaint${total === 1 ? '' : 's'}`,
-    `Filed with the FCC by consumers${states > 1 ? ` across ${states} states` : ''}${topType ? `, most often reported as "${topType.toLowerCase()}"` : ''}.`)];
-  if (states >= 10) {
-    out.push(signal('danger', 0, 'Nationwide complaint spread', `Complaints come from ${states} states, which is the signature of automated mass dialling rather than a local caller.`));
+  return Math.min(78, base + Math.round(Math.log10(total) * 22) + spread);
+}
+
+// The two federal complaint systems are scored together on purpose.
+//
+// They are NOT summed. A consumer who is called may report it to either or both agencies, so the
+// totals overlap by an unknown amount and adding them would inflate a single call into two. The
+// heavier of the two is scored and the other is reported alongside it.
+//
+// Appearing in both is treated as its own signal. Two independently collected federal corpora
+// naming the same number is stronger evidence than either count on its own, and it is evidence
+// that survives the caveat that complaints are filed against a spoofable caller ID.
+function complaintSignals(fcc, ftc) {
+  const out = [];
+  const fccTotal = fcc?.total || 0;
+  const ftcTotal = ftc?.total || 0;
+  if (!fccTotal && !ftcTotal) return out;
+
+  const fccWeight = fccTotal ? complaintWeight(fccTotal, fcc.states, 12) : 0;
+  const ftcWeight = ftcTotal ? complaintWeight(ftcTotal, ftc.states, 14) : 0;
+  const scored = Math.max(fccWeight, ftcWeight);
+
+  if (fccTotal) {
+    out.push(signal(fccTotal >= 10 ? 'danger' : 'warn', fccWeight >= ftcWeight ? scored : 0,
+      `${fccTotal} FCC complaint${fccTotal === 1 ? '' : 's'}`,
+      `Filed with the FCC${fcc.states > 1 ? ` from ${fcc.states} states` : ''}${fcc.topType ? `, most often reported as "${fcc.topType.toLowerCase()}"` : ''}. The FCC corpus reaches back years.`));
   }
-  if (advertisers?.length) {
-    out.push(signal('warn', 0, 'Reported as calling on behalf of', advertisers.join(', ')));
+  if (ftcTotal) {
+    const robo = ftc.robocalls || 0;
+    out.push(signal(ftcTotal >= 10 ? 'danger' : 'warn', ftcWeight > fccWeight ? scored : 0,
+      `${ftcTotal} FTC Do Not Call report${ftcTotal === 1 ? '' : 's'}`,
+      `Reported to the FTC${ftc.states > 1 ? ` from ${ftc.states} states` : ''}${robo ? `, ${robo} of them as recorded or robocalls` : ''}${ftc.last ? `, most recently ${ftc.last}` : ''}. These cover only the last few weeks, so this is an actively dialling number.`));
+    if (ftc.subjects?.length) {
+      out.push(signal('warn', 0, 'Reported subjects', ftc.subjects.join(' · ')));
+    }
+  }
+  if (fccTotal && ftcTotal) {
+    out.push(signal('danger', 18, 'Reported to both federal complaint systems',
+      'The FCC and the FTC collect complaints independently. A number appearing in both has been reported by separate people through separate channels, which is considerably harder to dismiss than volume in one dataset.'));
+  }
+  const widest = Math.max(fcc?.states || 0, ftc?.states || 0);
+  if (widest >= 10) {
+    out.push(signal('danger', 0, 'Nationwide complaint spread', `Reports come from ${widest} states, which is the signature of automated mass dialling rather than a local caller.`));
+  }
+  if (fcc?.advertisers?.length) {
+    out.push(signal('warn', 0, 'Reported as calling on behalf of', fcc.advertisers.join(', ')));
   }
   return out;
 }
@@ -99,7 +134,7 @@ function identitySignals(identity) {
   return [signal('good', -25, 'Listed in a public registry', `Published as a contact number for ${names.join(', ')}. A number appearing in open business records is far less likely to be a throwaway used for fraud.`)];
 }
 
-export function assess({ phone, digits, nanp, ownNumber, prefix, complaints, identity }) {
+export function assess({ phone, digits, nanp, ownNumber, prefix, complaints, ftc, identity }) {
   const signals = [];
   if (phone && !phone.isPossible()) {
     signals.push(signal('danger', 40, 'Not a possible number', 'The digit count does not fit any published numbering plan for this country.'));
@@ -116,7 +151,7 @@ export function assess({ phone, digits, nanp, ownNumber, prefix, complaints, ide
     ...spoofSignals(digits, ownNumber),
     ...nanpSignals(phone, digits, nanp),
     ...prefixSignals(prefix),
-    ...complaintSignals(complaints),
+    ...complaintSignals(complaints, ftc),
     ...identitySignals(identity)
   );
 

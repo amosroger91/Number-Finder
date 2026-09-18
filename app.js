@@ -4,6 +4,7 @@
 import { parsePhoneNumberFromString } from './vendor/libphonenumber-js.min.mjs';
 import * as sources from './sources.js';
 import { assess } from './risk.js';
+import { identityConfidence } from './evidence.js';
 
 const el = (id) => document.querySelector(id);
 const form = el('#lookup-form');
@@ -79,8 +80,8 @@ function ownDigits() {
 // --- Rendering ---------------------------------------------------------------------------------
 
 function renderRisk() {
-  const { phone, digits, nanp, prefix, complaints, identity, status } = state;
-  const verdict = assess({ phone, digits, nanp, ownNumber: ownDigits(), prefix, complaints, identity: identity?.length ? identity : null });
+  const { phone, digits, nanp, prefix, complaints, ftc, identity, status } = state;
+  const verdict = assess({ phone, digits, nanp, ownNumber: ownDigits(), prefix, complaints, ftc, identity: identity?.length ? identity : null });
   state.verdict = verdict;
 
   const checking = Object.entries(status).filter(([, value]) => value === PENDING).map(([key]) => key);
@@ -135,8 +136,33 @@ function renderIdentity() {
       ? 'Registry lookups could not be completed.'
       : 'No public business registry lists this number. Most private and mobile lines are not listed anywhere.'}</p>`;
 
+  // Synthesised across every identity source, because agreement between independent registries is
+  // a stronger claim than anything one of them says on its own.
+  const confidence = identityConfidence({
+    listings: identity || [],
+    cnam,
+    generic,
+    status: { 'registry listings': status.listings, 'caller name': status['caller name'] }
+  });
+  state.confidence = confidence;
+  const FILLED = { confirmed: 5, strong: 4, possible: 2, conflicting: 2, unknown: 0 }[confidence.band];
+  const meter = '█'.repeat(FILLED) + '░'.repeat(5 - FILLED);
+
   identityCard.innerHTML = `
-    <div class="business-results-heading">
+    <div class="confidence-head confidence-${confidence.band}">
+      <div>
+        <p class="coverage-label">Identity confidence</p>
+        <strong>${escapeHTML(confidence.label)}</strong>
+      </div>
+      <span class="confidence-meter" aria-hidden="true">${meter}</span>
+    </div>
+    ${confidence.name ? `<p class="confidence-name">${escapeHTML(confidence.name)}</p>` : ''}
+    <p class="source-note">${escapeHTML(confidence.detail)}</p>
+    ${confidence.agreeing.length ? `<p class="source-note">Agreeing: ${escapeHTML(confidence.agreeing.join(', '))}.</p>` : ''}
+    ${confidence.alternatives.length ? `<p class="source-note warn-note">Sources disagree: ${confidence.alternatives.map((alt) => `${escapeHTML(alt.name)} (${escapeHTML(alt.sources.join(', '))})`).join(' · ')}</p>` : ''}
+    ${confidence.noMatch.length ? `<p class="source-note">Checked, no match: ${escapeHTML(confidence.noMatch.join(', '))}.</p>` : ''}
+    ${confidence.unavailable.length ? `<p class="source-note warn-note">Could not check: ${escapeHTML(confidence.unavailable.join(', '))}.</p>` : ''}
+    <div class="business-results-heading listing-heading">
       <p class="coverage-label">Caller name</p>
       <strong>${status['caller name'] === PENDING ? 'Checking' : cnam ? 'Found' : 'None published'}</strong>
     </div>
@@ -149,18 +175,41 @@ function renderIdentity() {
     <p class="source-note">Sources: FreeCNAM, OpenStreetMap, Wikidata and SEC EDGAR. These list organisations, not private individuals.</p>`;
 }
 
+// The FTC block is rendered separately from the FCC block and the totals are never added together:
+// the same call can be reported to both agencies, and the two corpora cover different periods.
+function ftcBlock() {
+  const { ftc, ftcWindow, status } = state;
+  const heading = (value) => `<div class="business-results-heading listing-heading"><p class="coverage-label">FTC Do Not Call reports</p><strong>${value}</strong></div>`;
+  if (status['FTC reports'] === PENDING) return `${heading('Checking')}<p class="empty-state">Looking up FTC reported calls…</p>`;
+  if (status['FTC reports'] === FAILED) return `${heading('Unavailable')}<p class="empty-state">The FTC dataset could not be loaded, so recent reporting activity is unknown.</p>`;
+  if (!ftc) return `${heading('Not applicable')}<p class="empty-state">This dataset only covers numbers in the North American Numbering Plan.</p>`;
+
+  const window = ftcWindow ? ` covering ${ftcWindow.windowStart} to ${ftcWindow.windowEnd}` : '';
+  if (!ftc.total) {
+    return `${heading('None on file')}<p class="empty-state">No FTC Do Not Call report names this number in the published window${window}. The window is only a few weeks, so this says nothing about earlier activity.</p>`;
+  }
+  return `${heading(`${ftc.total} report${ftc.total === 1 ? '' : 's'}`)}
+    <dl class="complaint-facts">
+      <div><dt>Reports</dt><dd>${ftc.total}</dd></div>
+      <div><dt>Robocalls</dt><dd>${ftc.robocalls || 0}</dd></div>
+      <div><dt>States</dt><dd>${ftc.states || 'Unknown'}</dd></div>
+    </dl>
+    ${ftc.subjects?.length ? `<p class="source-note">Reported subjects: ${escapeHTML(ftc.subjects.join(' · '))}.</p>` : ''}
+    <p class="source-note">Reported between ${escapeHTML(ftc.first || '?')} and ${escapeHTML(ftc.last || '?')}${window ? `, within a published window${window}` : ''}.</p>`;
+}
+
 function renderComplaints() {
   const { complaints, advertisedBy, status } = state;
-  if (status.complaints === PENDING) {
-    complaintCard.innerHTML = '<div class="business-results-heading"><p class="coverage-label">FCC complaint record</p><strong>Checking</strong></div><p class="empty-state">Querying the FCC consumer complaint database…</p>';
+  if (status['FCC complaints'] === PENDING) {
+    complaintCard.innerHTML = `<div class="business-results-heading"><p class="coverage-label">FCC complaint record</p><strong>Checking</strong></div><p class="empty-state">Querying the FCC consumer complaint database…</p>${ftcBlock()}`;
     return;
   }
-  if (status.complaints === FAILED) {
-    complaintCard.innerHTML = '<div class="business-results-heading"><p class="coverage-label">FCC complaint record</p><strong>Unavailable</strong></div><p class="empty-state">The FCC database could not be reached, so the complaint history is unknown.</p>';
+  if (status['FCC complaints'] === FAILED) {
+    complaintCard.innerHTML = `<div class="business-results-heading"><p class="coverage-label">FCC complaint record</p><strong>Unavailable</strong></div><p class="empty-state">The FCC database could not be reached, so the complaint history is unknown.</p>${ftcBlock()}`;
     return;
   }
   if (!complaints) {
-    complaintCard.innerHTML = '<div class="business-results-heading"><p class="coverage-label">FCC complaint record</p><strong>Not applicable</strong></div><p class="empty-state">This dataset only covers numbers in the North American Numbering Plan.</p>';
+    complaintCard.innerHTML = `<div class="business-results-heading"><p class="coverage-label">FCC complaint record</p><strong>Not applicable</strong></div><p class="empty-state">This dataset only covers numbers in the North American Numbering Plan.</p>${ftcBlock()}`;
     return;
   }
 
@@ -187,7 +236,8 @@ function renderComplaints() {
     </div>
     ${rows}
     ${onBehalf}
-    <p class="source-note">Source: FCC Consumer Complaint Data (unwanted calls), dataset vakf-fz8e. Complaints are unverified consumer reports.</p>`;
+    ${ftcBlock()}
+    <p class="source-note">Sources: FCC Consumer Complaint Data (dataset vakf-fz8e) and FTC Do Not Call reported calls. Both are unverified consumer reports filed against a caller ID that can be forged, and the two totals are deliberately not added together.</p>`;
 }
 
 function renderGrid() {
@@ -235,7 +285,8 @@ function renderAll() {
 const GROUPS = {
   'caller name': ['cnam'],
   listings: ['osm', 'wikidata', 'sec'],
-  complaints: ['fcc', 'fccAdvertisers'],
+  'FCC complaints': ['fcc', 'fccAdvertisers'],
+  'FTC reports': ['ftc'],
   'carrier records': ['exchange']
 };
 
@@ -281,12 +332,14 @@ async function lookup(phone) {
     prefix: null,
     complaints: null,
     advertisedBy: null,
+    ftc: null,
+    ftcWindow: null,
     identity: [],
     cnam: null,
     geo: null,
     timezones: null,
     carrier: null,
-    raw: { cnam: PENDING, osm: PENDING, wikidata: PENDING, sec: PENDING, fcc: PENDING, fccAdvertisers: PENDING, exchange: PENDING },
+    raw: { cnam: PENDING, osm: PENDING, wikidata: PENDING, sec: PENDING, fcc: PENDING, fccAdvertisers: PENDING, ftc: PENDING, exchange: PENDING },
     status: {}
   };
   syncStatus();
@@ -312,6 +365,8 @@ async function lookup(phone) {
     sources.nanpTable().then((table) => { if (state) state.nanp = table; renderRisk(); }).catch(() => {}),
     track('fcc', sources.fccComplaints(phone), (value) => { state.complaints = value; }),
     track('fccAdvertisers', sources.fccAdvertisedBy(phone), (value) => { state.advertisedBy = value; }),
+    track('ftc', sources.ftcReports(phone), (value) => { state.ftc = value; }),
+    sources.ftcWindow().then((value) => { if (state) state.ftcWindow = value; }).catch(() => {}),
     track('exchange', sources.exchangeRecord(phone), (value) => { state.prefix = value; }),
     track('cnam', sources.callerName(phone), (value) => { state.cnam = value; }),
     track('osm', sources.osmListings(phone), addListings),
@@ -382,7 +437,9 @@ el('#copy-button').addEventListener('click', async () => {
     risk: state.verdict ? { score: state.verdict.score, band: state.verdict.band, signals: state.verdict.signals.map((s) => s.label) } : null,
     callerName: state.cnam?.name || null,
     listings: state.identity,
+    identityConfidence: state.confidence ? { band: state.confidence.band, name: state.confidence.name, agreeing: state.confidence.agreeing } : null,
     fccComplaints: state.complaints,
+    ftcReports: state.ftc,
     sourceStatus: state.status
   };
   await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));

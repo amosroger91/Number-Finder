@@ -126,6 +126,48 @@ export function fccAdvertisedBy(phone) {
   });
 }
 
+// --- FTC Do Not Call reports -------------------------------------------------------------------
+// The FTC publishes daily CSVs of reported calls keyed on the originating number. They serve no
+// CORS headers and the official api.ftc.gov endpoint requires a key, so `data/build-ftc.mjs` folds
+// the corpus into static shards at build time and the browser fetches one of those.
+//
+// This is a RECENCY signal, not a history. The published window is about five weeks, so a number
+// found here was reported in the last few weeks, whereas the FCC dataset reaches back years. The
+// two are reported side by side and never summed: a consumer may well file with both, so adding
+// the counts would double-count one call. What is worth more than either total is agreement.
+
+export function ftcReports(phone) {
+  const national = phone.nationalNumber;
+  if (phone.countryCallingCode !== '1' || national.length !== 10) return Promise.resolve(null);
+  return once(`ftc:${national}`, async () => {
+    const shard = new URL(`./data/ftc/${national.slice(0, 3)}/${national[3]}.json`, import.meta.url);
+    let response;
+    try {
+      response = await fetch(shard);
+    } catch (error) {
+      throw new Error(`FTC shard unreachable: ${error.message}`);
+    }
+    // A missing shard is a definitive "no reports": the file only exists where data does. Any
+    // other failure is genuinely unknown and must propagate rather than read as clean.
+    if (response.status === 404) return { total: 0 };
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const entry = (await response.json())[national];
+    if (!entry) return { total: 0 };
+    return {
+      total: entry.n,
+      robocalls: entry.r,
+      subjects: entry.s || [],
+      states: entry.st || 0,
+      first: entry.first,
+      last: entry.last
+    };
+  });
+}
+
+export function ftcWindow() {
+  return once('ftc:index', async () => (await request(new URL('./data/ftc/index.json', import.meta.url))).json());
+}
+
 // --- OpenStreetMap via Overpass --------------------------------------------------------------
 // Matching is by exact tag value across every common spelling of the number, which is indexed and
 // returns in about a second.

@@ -32,6 +32,12 @@ jobs:
       - name: Refresh NANP data
         run: node data/build-nanp.mjs
         continue-on-error: true
+      # ~30MB of sharded FTC complaint data, generated straight into the Pages artifact rather than
+      # committed, so the repository stays small and its history is not rewritten every deploy.
+      # On failure the site still deploys and simply reports the FTC source as unavailable.
+      - name: Build FTC complaint shards
+        run: node data/build-ftc.mjs
+        continue-on-error: true
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site

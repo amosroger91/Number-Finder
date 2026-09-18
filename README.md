@@ -13,7 +13,8 @@ Runs entirely in the browser. No account, no server, no database, no tracking, a
 - **Identify organisations.** Resolves a number to a business or institution via OpenStreetMap, Wikidata, SEC filings and the carrier caller-name database.
 - **Prove some caller IDs are forged.** Unassigned area codes and exchanges, reserved ranges and placeholder digit runs are *conclusive* — no carrier can originate such a call.
 - **Detect neighbour spoofing.** Save your own number and any caller ID sharing your exchange is flagged. This is the most common spoofing tactic.
-- **Report federal complaint history.** Complaint counts, call types, geographic spread and recency from ~1.8M FCC unwanted-call complaints.
+- **Report federal complaint history from two independent systems.** ~1.8M FCC unwanted-call complaints reaching back years, plus FTC Do Not Call reports covering the last few weeks. A number appearing in **both** is called out as its own signal.
+- **Synthesise identity across sources.** Rather than listing what each registry said, it reports whether they *agree*, in explainable bands (Confirmed / Strong / Possible / Conflicting / Unknown) that count distinct sources, never a fabricated percentage.
 - **Answer "on behalf of who".** The FCC dataset records the business a complainant said a call was made *for*, queried in both directions.
 - **Work offline.** Parsing, formatting and all structural spoof checks run with no network at all. A verdict is always produced.
 - **Tell you what it couldn't check.** Every source reports separately, so "checked and found nothing" is never conflated with "could not reach the database".
@@ -47,7 +48,8 @@ Runs entirely in the browser. No account, no server, no database, no tracking, a
 
 | Source | Endpoint | Access | Provides |
 | --- | --- | --- | --- |
-| **FCC Consumer Complaints** | `opendata.fcc.gov/resource/vakf-fz8e.json` | Direct | ~1.8M unwanted-call complaints (Socrata/SoQL) |
+| **FCC Consumer Complaints** | `opendata.fcc.gov/resource/vakf-fz8e.json` | Direct | ~1.8M unwanted-call complaints (Socrata/SoQL), reaching back years |
+| **FTC Do Not Call reports** | `search.ftc.gov/.../DNC_Complaint_Numbers_*.csv` | Build-time | Daily reported-call files: originating number, robocall flag, subject, consumer state |
 | **areacode.fyi** | `areacode.fyi/api/v1/carrier/<10 digits>` | Direct | NANPA block allocation: carrier, rate centre, line type, **and whether the exchange is assigned at all** |
 
 ### Metadata
@@ -58,6 +60,7 @@ Runs entirely in the browser. No account, no server, no database, no tracking, a
 | **libphonenumber-geo-carrier** | `cdn.jsdelivr.net/npm/...@2.0.0` | Direct | Geocode and timezone prefix data (BSON) |
 | **Area-Code-Geolocation-Database** | `raw.githubusercontent.com/ravisorg/...` | Direct | Area-code geography; build input for `data/nanp.json` |
 | **`data/nanp.json`** | bundled, generated | None | 336 NANP area codes for offline structural checks |
+| **`data/ftc/`** | generated in CI | None | ~264k numbers sharded by NPA + exchange digit |
 
 Relays used for the two CORS-less sources: `r.jina.ai`, then `api.allorigins.win`.
 
@@ -80,6 +83,12 @@ Relays used for the two CORS-less sources: `r.jina.ai`, then `api.allorigins.win
 **SEC EDGAR** — full-text search over filings; a hit is about the strongest identity confirmation an open dataset can give. Returns registrant names with filing counts. Public companies only, NANP only. **Caveat:** placeholder numbers such as `123-456-7890` genuinely appear in real filings, which is why registry listings can never offset conclusive spoofing evidence in the score.
 
 **FreeCNAM** — the most direct answer to "who is calling" available without a paid provider. **Currently returning HTTP 500 `Error: ratelimit or other issue` for every number**, including through unrelated proxy IPs, which suggests an upstream outage rather than local rate-limiting. It is wired up and will populate if the service recovers; until then it reports *unavailable*, never "no name". It has undocumented personal and global rate limits and serves no CORS headers.
+
+**FTC Do Not Call reports** — the FTC publishes one CSV per business day (~12,400 rows) listing every reported call. **94% carry a usable 10-digit originating number**, against roughly 40% for the FCC feed, and ~70% are flagged as recorded or robocalls. The subject taxonomy is genuinely useful, including an explicit *"calls pretending to be government, businesses, or family and friends"* category.
+
+The files serve **no CORS headers**, and the official `api.ftc.gov` endpoint requires an API key — and returned visibly misaligned fields when tested — so neither can be queried from the browser. Instead `data/build-ftc.mjs` folds the published window into static shards at build time: currently 27 days, 322,876 reports, 263,501 distinct numbers, ~30 MB across 3,899 shards with the largest at 295 kB.
+
+*This is a recency signal, not a history.* The published window is about five weeks, so the two federal datasets answer different questions — the FCC's top robocaller in this repo's tests (715 complaints, last active 2021) does not appear in the FTC window at all. **The totals are never added together**: a consumer may report the same call to both agencies, so summing would double-count. The heavier of the two is scored, the other is shown beside it, and appearing in both is its own signal.
 
 **libphonenumber-geo-carrier** — note that `carrier/en/1.bson` contains only 696 keys, all Caribbean NANP. There is **no US/Canada carrier data** in this dataset, which is why areacode.fyi is required. Geocode keys omit the country code (`479273` → `Bentonville, AR`); `timezones.bson` is one global file. The BSON decoder is loaded lazily.
 
@@ -129,16 +138,42 @@ Any single conclusive signal reaches 70 on its own, so proven forgery always lan
 | Premium rate | 45 | Return-call billing fraud |
 | Reserved range / 555 / repeated NPA | 20–30 | Structural |
 | VoIP, toll-free, competitive carrier | 5–8 | Weak context, not accusations |
+| FTC Do Not Call reports | up to 78 | Scaled by volume and spread; **max** with FCC, never summed |
+| Reported to both federal systems | 18 | Two independently collected corpora naming the same number |
 | Listed in a public registry | −25 | Trust — but withheld once spoofing is proven |
+
+## Identity confidence
+
+`evidence.js` is pure and has no network dependency. It groups every identity result by the
+organisation named, tolerating the spelling differences between registries (EDGAR files
+`WAL MART STORES INC`, OpenStreetMap says `Walmart Supercenter`, Wikidata says `Walmart`), then
+counts **distinct sources** — five EDGAR filings for one company are one source agreeing, not five.
+
+| Band | Meaning |
+| --- | --- |
+| **Confirmed** | Three or more independent registries name the same organisation |
+| **Strong** | Two independent registries agree |
+| **Possible** | One registry contains the number |
+| **Conflicting** | Independent sources resolve the number to different organisations |
+| **Unknown** | No identity source matched |
+
+Two deliberate rules. A *generic* CNAM such as `WIRELESS CALLER` describes the line rather than the
+caller, so it never counts towards agreement. And one source listing several related entities is not
+a conflict: a corporate switchboard legitimately resolves to the company, its foundation and its
+officers' filings, and calling that "conflicting" would penalise exactly the large, well-documented
+organisations the registries describe best. Conflict requires *independent sources* to disagree.
 
 ## Architecture
 
 ```text
-Browser -> index.html -> app.js ---> sources.js -> keyless public APIs
-                              \----> risk.js    -> offline scoring
-                              \----> data/nanp.json
+Browser -> index.html -> app.js ---> sources.js  -> keyless public APIs
+                              \----> risk.js     -> offline scam scoring
+                              \----> evidence.js -> identity confidence
+                              \----> data/nanp.json, data/ftc/  (generated)
                               \----> localStorage (recent checks, your own number)
 ```
+
+Bulk datasets too large to track in git are generated by CI **straight into the Pages artifact**, so the repository stays small and its history is not rewritten on every deploy. They are listed in `.gitignore`; if a build step fails the site still deploys and reports that source as unavailable.
 
 `app.js` renders the local parse immediately, then fills each section as sources answer.
 
@@ -162,8 +197,11 @@ styles.css           Responsive visual design
 app.js               Orchestration, progressive rendering, interaction
 sources.js           Keyless external data sources
 risk.js              Offline scam scoring
+evidence.js          Identity confidence across sources
 data/nanp.json       Generated area-code table (committed)
 data/build-nanp.mjs  Regenerates the table; run by CI on deploy
+data/build-ftc.mjs   Builds FTC complaint shards; run by CI on deploy
+data/ftc/            Generated FTC shards (gitignored, published by CI)
 vendor/              Vendored libphonenumber-js
 ```
 
