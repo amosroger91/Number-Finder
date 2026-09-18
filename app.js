@@ -1,25 +1,45 @@
-import { parsePhoneNumberFromString } from 'https://cdn.jsdelivr.net/npm/libphonenumber-js@1.11.20/+esm';
-import { deserialize } from 'https://cdn.jsdelivr.net/npm/bson@6.10.4/lib/bson.mjs';
+// Vendored rather than loaded from a CDN: this is the one dependency the app cannot degrade
+// without. An import failure aborts the whole module, so a blocked or unreachable CDN would leave
+// a form that silently does nothing, instead of a page that still parses and scores offline.
+import { parsePhoneNumberFromString } from './vendor/libphonenumber-js.min.mjs';
+import * as sources from './sources.js';
+import { assess } from './risk.js';
 
-const form = document.querySelector('#lookup-form');
-const input = document.querySelector('#phone-input');
-const region = document.querySelector('#region-select');
-const results = document.querySelector('#results');
-const errorMessage = document.querySelector('#error-message');
-const resultTitle = document.querySelector('#result-title');
-const resultGrid = document.querySelector('#result-grid');
-const statusBanner = document.querySelector('#status-banner');
-const history = document.querySelector('#history');
+const el = (id) => document.querySelector(id);
+const form = el('#lookup-form');
+const input = el('#phone-input');
+const region = el('#region-select');
+const results = el('#results');
+const errorMessage = el('#error-message');
+const resultTitle = el('#result-title');
+const resultGrid = el('#result-grid');
+const statusBanner = el('#status-banner');
+const history = el('#history');
+const riskCard = el('#risk-card');
+const identityCard = el('#identity-card');
+const complaintCard = el('#complaint-card');
+const ownNumberInput = el('#own-number');
+
 const historyKey = 'number-finder-history';
-let currentResult = null;
-const metadataCache = new Map();
-const areaDatasetCache = new Map();
+const ownKey = 'number-finder-own';
 
 const labels = {
-  country: 'Country / region', callingCode: 'Calling code', countryCode: 'Country code', area: 'Numbering area', continent: 'Continent', subregion: 'Subregion', capital: 'Capital', languages: 'Languages', currencies: 'Currencies', carrier: 'Original carrier', lineType: 'Block line type', rateCenter: 'Rate center', timezones: 'Likely time zone(s)',
+  country: 'Country / region', callingCode: 'Calling code', countryCode: 'Country code', area: 'Numbering area',
+  carrier: 'Allocated carrier', carrierKind: 'Block line type', rateCenter: 'Rate center', lata: 'LATA', timezones: 'Likely time zone(s)',
   national: 'National format', international: 'International format', uri: 'Tel URI',
   type: 'Number type', possible: 'Possible length', digits: 'Digits', extension: 'Extension'
 };
+
+// Each enrichment source reports its own outcome so the interface can distinguish "checked and
+// found nothing" from "could not check". Treating those as the same thing is how a lookup tool
+// ends up implying a number is safe when it simply failed to reach a database.
+const PENDING = 'pending';
+const OK = 'ok';
+const EMPTY = 'empty';
+const FAILED = 'failed';
+
+let state = null;
+let token = 0;
 
 function display(value) {
   return value === undefined || value === null || value === '' ? 'Not available' : value;
@@ -29,80 +49,165 @@ function escapeHTML(value) {
   return String(value).replace(/[&<>"']/g, (character) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' })[character]);
 }
 
+// Only http(s) links are ever rendered: listing URLs come from third-party datasets, and escaping
+// alone would not stop a javascript: or data: URL in an href.
+function safeURL(value) {
+  try {
+    const url = new URL(value);
+    return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : null;
+  } catch {
+    return null;
+  }
+}
+
 function typeName(type) {
   return ({ MOBILE: 'Mobile', FIXED_LINE: 'Landline', FIXED_LINE_OR_MOBILE: 'Landline or mobile', TOLL_FREE: 'Toll-free', PREMIUM_RATE: 'Premium rate', VOIP: 'VoIP', PAGER: 'Pager', UAN: 'Universal access', VOICEMAIL: 'Voicemail' })[type] || 'Unknown';
 }
 
 function areaDescription(phone) {
   if (phone.country === 'US' || phone.country === 'CA') {
-    return `NANP area code ${phone.nationalNumber.slice(0, 3)} (original assignment)`;
+    return `NANP area code ${phone.nationalNumber.slice(0, 3)}`;
   }
   return phone.country ? 'Country-level numbering region' : 'Not available';
 }
 
-async function prefixMetadata(kind, countryCallingCode, digits) {
-  const cacheKey = `${kind}:${countryCallingCode}`;
-  let data = metadataCache.get(cacheKey);
-  if (!data) {
-    const resource = kind === 'timezone' ? 'timezones.bson' : `${kind}/en/${countryCallingCode}.bson`;
-    const response = await fetch(`https://cdn.jsdelivr.net/npm/libphonenumber-geo-carrier@2.0.0/resources/${resource}`);
-    if (!response.ok) return null;
-    data = deserialize(new Uint8Array(await response.arrayBuffer()));
-    metadataCache.set(cacheKey, data);
-  }
-  let prefix = digits;
-  while (prefix.length) {
-    if (data[prefix]) return data[prefix];
-    prefix = prefix.slice(0, -1);
-  }
-  return null;
+function ownDigits() {
+  const parsed = parsePhoneNumberFromString(localStorage.getItem(ownKey) || '', 'US');
+  return parsed?.countryCallingCode === '1' ? parsed.nationalNumber : null;
 }
 
-async function areaCodeLocation(phone) {
-  if (phone.country !== 'US' && phone.country !== 'CA') return null;
-  const country = phone.country.toLowerCase();
-  let rows = areaDatasetCache.get(country);
-  if (!rows) {
-    const file = country === 'us' ? 'us-area-code-cities.csv' : 'ca-area-code-cities.csv';
-    const response = await fetch(`https://raw.githubusercontent.com/ravisorg/Area-Code-Geolocation-Database/master/${file}`);
-    if (!response.ok) return null;
-    rows = (await response.text()).split(/\r?\n/);
-    areaDatasetCache.set(country, rows);
+// --- Rendering ---------------------------------------------------------------------------------
+
+function renderRisk() {
+  const { phone, digits, nanp, prefix, complaints, identity, status } = state;
+  const verdict = assess({ phone, digits, nanp, ownNumber: ownDigits(), prefix, complaints, identity: identity?.length ? identity : null });
+  state.verdict = verdict;
+
+  const checking = Object.entries(status).filter(([, value]) => value === PENDING).map(([key]) => key);
+  const unavailable = Object.entries(status).filter(([, value]) => value === FAILED).map(([key]) => key);
+  const signals = verdict.signals.length
+    ? verdict.signals.map((signal) => `<li class="signal signal-${signal.level}"><strong>${escapeHTML(signal.label)}</strong><span>${escapeHTML(signal.detail)}</span></li>`).join('')
+    : '<li class="signal signal-info"><strong>No risk signals</strong><span>Nothing in the checks below flagged this number.</span></li>';
+
+  riskCard.innerHTML = `
+    <div class="risk-head risk-${verdict.band}">
+      <div>
+        <p class="coverage-label">Risk assessment</p>
+        <strong>${escapeHTML(verdict.label)}</strong>
+      </div>
+      <div class="risk-score" aria-label="Risk score ${verdict.score} out of 100"><span>${verdict.score}</span><small>/100</small></div>
+    </div>
+    <ul class="signal-list">${signals}</ul>
+    ${checking.length ? `<p class="source-note">Still checking: ${escapeHTML(checking.join(', '))}.</p>` : ''}
+    ${unavailable.length ? `<p class="source-note warn-note">Could not reach: ${escapeHTML(unavailable.join(', '))}. A number with no result from these is <strong>not</strong> confirmed safe.</p>` : ''}
+    <p class="source-note">Scoring is heuristic. Caller ID is trivially forged, so a clean result never proves a call is genuine.</p>`;
+}
+
+function identityRow(entry) {
+  const url = entry.url ? safeURL(entry.url) : null;
+  const site = entry.website ? safeURL(entry.website) : null;
+  const meta = [entry.kind, entry.address, entry.phone].filter(Boolean).map(escapeHTML).join(' &middot; ');
+  const title = escapeHTML(entry.name || 'Unnamed listing');
+  return `<article class="business-result">
+    <p class="listing-source">${escapeHTML(entry.source)}${entry.count ? ` &middot; ${entry.count} filing${entry.count === 1 ? '' : 's'}` : ''}</p>
+    ${url ? `<a href="${escapeHTML(url)}" target="_blank" rel="noopener noreferrer">${title}</a>` : `<strong>${title}</strong>`}
+    ${meta ? `<p>${meta}</p>` : ''}
+    ${site ? `<p><a href="${escapeHTML(site)}" target="_blank" rel="noopener noreferrer">${escapeHTML(site)}</a></p>` : ''}
+  </article>`;
+}
+
+function renderIdentity() {
+  const { cnam, identity, status } = state;
+  const generic = cnam && sources.GENERIC_CNAM.test(cnam.name);
+  const cnamBlock = status['caller name'] === PENDING
+    ? '<p class="empty-state">Checking the caller-name database…</p>'
+    : cnam
+      ? `<p class="cnam-value">${escapeHTML(cnam.name)}</p><p class="source-note">${generic
+        ? 'This is a generic placeholder the carrier returns when no subscriber name is on file. It describes the line, not the caller.'
+        : 'Caller name (CNAM) as carriers would display it. It is set by the line’s own provider and is not independently verified.'}</p>`
+      : `<p class="empty-state">${status['caller name'] === FAILED
+        ? 'The caller-name service could not be reached, so no name was retrieved. This is not the same as the number having no name.'
+        : 'No caller name is published for this number.'}</p>`;
+
+  const listings = identity?.length
+    ? identity.map(identityRow).join('')
+    : `<p class="empty-state">${status.listings === PENDING ? 'Searching public business registries…' : status.listings === FAILED
+      ? 'Registry lookups could not be completed.'
+      : 'No public business registry lists this number. Most private and mobile lines are not listed anywhere.'}</p>`;
+
+  identityCard.innerHTML = `
+    <div class="business-results-heading">
+      <p class="coverage-label">Caller name</p>
+      <strong>${status['caller name'] === PENDING ? 'Checking' : cnam ? 'Found' : 'None published'}</strong>
+    </div>
+    ${cnamBlock}
+    <div class="business-results-heading listing-heading">
+      <p class="coverage-label">Public registry listings</p>
+      <strong>${identity?.length ? `${identity.length} match${identity.length === 1 ? '' : 'es'}` : status.listings === PENDING ? 'Searching' : 'None'}</strong>
+    </div>
+    ${listings}
+    <p class="source-note">Sources: FreeCNAM, OpenStreetMap, Wikidata and SEC EDGAR. These list organisations, not private individuals.</p>`;
+}
+
+function renderComplaints() {
+  const { complaints, advertisedBy, status } = state;
+  if (status.complaints === PENDING) {
+    complaintCard.innerHTML = '<div class="business-results-heading"><p class="coverage-label">FCC complaint record</p><strong>Checking</strong></div><p class="empty-state">Querying the FCC consumer complaint database…</p>';
+    return;
   }
-  const code = phone.nationalNumber.slice(0, 3);
-  const locations = rows.filter((row) => row.startsWith(`${code},`)).slice(0, 5).map((row) => {
-    const match = row.match(/^\d{3},(".*?"|[^,]+),(".*?"|[^,]+),/);
-    return match ? `${match[1].replaceAll('"', '')}, ${match[2].replaceAll('"', '')}` : null;
-  }).filter(Boolean);
-  return [...new Set(locations)].join(' / ') || null;
+  if (status.complaints === FAILED) {
+    complaintCard.innerHTML = '<div class="business-results-heading"><p class="coverage-label">FCC complaint record</p><strong>Unavailable</strong></div><p class="empty-state">The FCC database could not be reached, so the complaint history is unknown.</p>';
+    return;
+  }
+  if (!complaints) {
+    complaintCard.innerHTML = '<div class="business-results-heading"><p class="coverage-label">FCC complaint record</p><strong>Not applicable</strong></div><p class="empty-state">This dataset only covers numbers in the North American Numbering Plan.</p>';
+    return;
+  }
+
+  const rows = complaints.total
+    ? `<dl class="complaint-facts">
+        <div><dt>Complaints filed</dt><dd>${complaints.total}</dd></div>
+        <div><dt>States affected</dt><dd>${complaints.states || 'Unknown'}</dd></div>
+        <div><dt>Most reported as</dt><dd>${escapeHTML(display(complaints.topType))}</dd></div>
+       </dl>
+       ${complaints.types.length ? `<p class="source-note">Reported call types: ${escapeHTML(complaints.types.join(', '))}.</p>` : ''}
+       ${complaints.topStates.length ? `<p class="source-note">Most complaints from: ${escapeHTML(complaints.topStates.join(', '))}.</p>` : ''}
+       ${complaints.recent.length ? `<p class="source-note">Most recent: ${escapeHTML(complaints.recent.map((entry) => `${entry.date}${entry.state ? ` (${entry.state})` : ''}`).join(', '))}.</p>` : ''}`
+    : '<p class="empty-state">No consumer has filed an FCC unwanted-call complaint naming this caller ID. Note that complaints are filed against the displayed number, which a spoofer can change at will.</p>';
+
+  const onBehalf = advertisedBy?.length
+    ? `<div class="business-results-heading listing-heading"><p class="coverage-label">Calls made on behalf of this number</p><strong>${advertisedBy.length}</strong></div>
+       <p class="source-note">Complainants reported these caller IDs as dialling to advertise this number: ${escapeHTML(advertisedBy.map((entry) => `${entry.number} (${entry.count})`).join(', '))}.</p>`
+    : '';
+
+  complaintCard.innerHTML = `
+    <div class="business-results-heading">
+      <p class="coverage-label">FCC complaint record</p>
+      <strong>${complaints.total ? `${complaints.total} complaint${complaints.total === 1 ? '' : 's'}` : 'None on file'}</strong>
+    </div>
+    ${rows}
+    ${onBehalf}
+    <p class="source-note">Source: FCC Consumer Complaint Data (unwanted calls), dataset vakf-fz8e. Complaints are unverified consumer reports.</p>`;
 }
 
-async function nanpCarrier(phone) {
-  if (phone.country !== 'US' && phone.country !== 'CA') return null;
-  const response = await fetch(`https://areacode.fyi/api/v1/carrier/${phone.nationalNumber}`);
-  if (!response.ok) return null;
-  const data = await response.json();
-  return data.prefix_found ? data : null;
-}
-
-async function renderResult(phone) {
+function renderGrid() {
+  const { phone, prefix, geo, timezones, carrier } = state;
   const country = phone.country || 'Unknown';
-  const [originalCarrier, numberingArea, timezones, nanpData] = await Promise.all([
-    prefixMetadata('carrier', phone.countryCallingCode, phone.nationalNumber).catch(() => null),
-    prefixMetadata('geocodes', phone.countryCallingCode, phone.nationalNumber).catch(() => null),
-    prefixMetadata('timezone', phone.countryCallingCode, phone.number.replace(/^\+/, '')).catch(() => null),
-    nanpCarrier(phone).catch(() => null)
-  ]);
-  const datasetArea = numberingArea || await areaCodeLocation(phone).catch(() => null);
   const data = {
     country: country === 'Unknown' ? country : new Intl.DisplayNames(['en'], { type: 'region' }).of(country),
     callingCode: `+${phone.countryCallingCode}`,
     countryCode: country,
-    area: datasetArea || areaDescription(phone),
-    carrier: nanpData?.carrier || originalCarrier || 'Not available in prefix metadata',
-    lineType: nanpData?.line_type || typeName(phone.getType()),
-    rateCenter: nanpData?.rate_center || 'Not available',
-    timezones: timezones || 'Not available in prefix metadata',
+    area: geo || areaDescription(phone),
+    // Both available sources report the carrier a number BLOCK was allocated to, not who carries
+    // the number today: after two decades of portability those routinely differ, and no keyless
+    // source exposes live routing. The label says "allocated" so the result is not over-read.
+    carrier: prefix?.company || carrier || 'Not available',
+    carrierKind: prefix?.lineType
+      ? `${prefix.lineType[0].toUpperCase()}${prefix.lineType.slice(1)} block`
+      : sources.carrierTypeName(prefix?.companyType) || typeName(phone.getType()),
+    rateCenter: prefix ? [prefix.rateCenter, prefix.region].filter(Boolean).join(', ') : 'Not available',
+    lata: prefix?.lata || 'Not available',
+    timezones: timezones || 'Not available',
     national: phone.formatNational(),
     international: phone.formatInternational(),
     uri: phone.getURI(),
@@ -111,85 +216,189 @@ async function renderResult(phone) {
     digits: phone.nationalNumber,
     extension: phone.ext || 'None'
   };
-  currentResult = { input: input.value.trim(), ...data, valid: phone.isValid() };
-  resultTitle.textContent = data.international;
-  statusBanner.classList.toggle('invalid', !phone.isValid());
-  statusBanner.textContent = phone.isValid() ? 'This number matches a valid numbering pattern.' : phone.isPossible() ? 'This number is possible, but could not be confirmed as valid.' : 'This number does not match a possible numbering pattern.';
+  state.data = data;
   resultGrid.innerHTML = Object.entries(data).map(([key, value]) => `<dl class="result-item"><dt>${labels[key]}</dt><dd>${escapeHTML(display(value))}</dd></dl>`).join('');
-  results.hidden = false;
-  results.scrollIntoView({ behavior: 'smooth', block: 'start' });
-  saveHistory(currentResult);
 }
 
-function saveHistory(item) {
-  const entries = JSON.parse(localStorage.getItem(historyKey) || '[]').filter((entry) => entry.input !== item.input);
-  entries.unshift({ input: item.input, international: item.international, country: item.country });
-  localStorage.setItem(historyKey, JSON.stringify(entries.slice(0, 5)));
+function renderAll() {
+  renderGrid();
+  renderRisk();
+  renderIdentity();
+  renderComplaints();
+}
+
+// --- Lookup ------------------------------------------------------------------------------------
+
+// Several independent sources feed one section of the report, so their outcomes are tracked
+// individually and then collapsed. A section counts as reachable if any of its sources answered;
+// it is only reported unavailable when every source behind it failed.
+const GROUPS = {
+  'caller name': ['cnam'],
+  listings: ['osm', 'wikidata', 'sec'],
+  complaints: ['fcc', 'fccAdvertisers'],
+  'carrier records': ['exchange']
+};
+
+function groupStatus(members) {
+  const values = members.map((member) => state.raw[member]);
+  if (values.includes(PENDING)) return PENDING;
+  if (values.includes(OK)) return OK;
+  if (values.every((value) => value === FAILED)) return FAILED;
+  return EMPTY;
+}
+
+function syncStatus() {
+  for (const [group, members] of Object.entries(GROUPS)) state.status[group] = groupStatus(members);
+}
+
+// Every source is optional. A rejection marks that source unavailable and leaves the rest of the
+// report intact rather than failing the whole lookup.
+function track(id, promise, apply) {
+  const mine = token;
+  return promise.then(
+    (value) => {
+      if (mine !== token) return;
+      state.raw[id] = value && (!Array.isArray(value) || value.length) ? OK : EMPTY;
+      apply(value);
+    },
+    () => {
+      if (mine !== token) return;
+      state.raw[id] = FAILED;
+    }
+  ).then(() => {
+    if (mine !== token) return;
+    syncStatus();
+    renderAll();
+  });
+}
+
+async function lookup(phone) {
+  token += 1;
+  state = {
+    phone,
+    digits: phone.nationalNumber,
+    nanp: null,
+    prefix: null,
+    complaints: null,
+    advertisedBy: null,
+    identity: [],
+    cnam: null,
+    geo: null,
+    timezones: null,
+    carrier: null,
+    raw: { cnam: PENDING, osm: PENDING, wikidata: PENDING, sec: PENDING, fcc: PENDING, fccAdvertisers: PENDING, exchange: PENDING },
+    status: {}
+  };
+  syncStatus();
+
+  // The local parse is rendered before any network call so the report is useful immediately and
+  // stays useful if every remote source is unreachable.
+  resultTitle.textContent = phone.formatInternational();
+  statusBanner.classList.toggle('invalid', !phone.isValid());
+  statusBanner.textContent = phone.isValid()
+    ? 'This number matches a valid numbering pattern.'
+    : phone.isPossible()
+      ? 'This number is possible, but could not be confirmed as valid.'
+      : 'This number does not match a possible numbering pattern.';
+  results.hidden = false;
+  renderAll();
+  results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  saveHistory(phone);
+
+  const addListings = (value) => { state.identity = [...state.identity, ...(value || [])]; };
+
+  await Promise.all([
+    // Offline numbering-plan table: drives the structural spoofing checks with no network at all.
+    sources.nanpTable().then((table) => { if (state) state.nanp = table; renderRisk(); }).catch(() => {}),
+    track('fcc', sources.fccComplaints(phone), (value) => { state.complaints = value; }),
+    track('fccAdvertisers', sources.fccAdvertisedBy(phone), (value) => { state.advertisedBy = value; }),
+    track('exchange', sources.exchangeRecord(phone), (value) => { state.prefix = value; }),
+    track('cnam', sources.callerName(phone), (value) => { state.cnam = value; }),
+    track('osm', sources.osmListings(phone), addListings),
+    track('wikidata', sources.wikidataListings(phone), addListings),
+    track('sec', sources.secFilings(phone), addListings),
+    sources.prefixMetadata('geocodes', phone.countryCallingCode, phone.nationalNumber)
+      .then((value) => { if (value) state.geo = value; })
+      .catch(() => sources.areaCodeLocation(phone).then((value) => { if (value) state.geo = value; }).catch(() => {})),
+    sources.prefixMetadata('timezone', phone.countryCallingCode, phone.number.replace(/^\+/, ''))
+      .then((value) => { if (value) state.timezones = Array.isArray(value) ? value.join(', ') : value; }).catch(() => {}),
+    sources.prefixMetadata('carrier', phone.countryCallingCode, phone.nationalNumber)
+      .then((value) => { if (value) state.carrier = value; }).catch(() => {})
+  ]);
+  renderAll();
+}
+
+// --- History -----------------------------------------------------------------------------------
+
+function saveHistory(phone) {
+  // Keyed on E.164 so the same number typed in two formats is one entry.
+  const entry = { key: phone.number, input: phone.number, international: phone.formatInternational(), country: phone.country || 'Unknown' };
+  const entries = JSON.parse(localStorage.getItem(historyKey) || '[]').filter((item) => (item.key || item.input) !== entry.key);
+  entries.unshift(entry);
+  localStorage.setItem(historyKey, JSON.stringify(entries.slice(0, 6)));
   renderHistory();
 }
 
 function renderHistory() {
   const entries = JSON.parse(localStorage.getItem(historyKey) || '[]');
-  history.innerHTML = entries.length ? entries.map((entry) => `<button class="history-item" type="button" data-number="${escapeHTML(entry.input)}"><span class="history-number">${escapeHTML(entry.international)}</span><span class="history-region">${escapeHTML(entry.country)}</span></button>`).join('') : '<p class="empty-state">Your recent checks will appear here, on this device only.</p>';
+  history.innerHTML = entries.length
+    ? entries.map((entry) => `<button class="history-item" type="button" data-number="${escapeHTML(entry.input)}"><span class="history-number">${escapeHTML(entry.international)}</span><span class="history-region">${escapeHTML(entry.country)}</span></button>`).join('')
+    : '<p class="empty-state">Your recent checks will appear here, on this device only.</p>';
 }
+
+// --- Events ------------------------------------------------------------------------------------
 
 form.addEventListener('submit', async (event) => {
   event.preventDefault();
   errorMessage.hidden = true;
-  try {
-    const phone = parsePhoneNumberFromString(input.value, region.value);
-    if (!phone) throw new Error('Enter a phone number with enough digits to analyze.');
-    await renderResult(phone);
-  } catch (error) {
-    errorMessage.textContent = error.message;
+  const phone = parsePhoneNumberFromString(input.value, region.value);
+  if (!phone) {
+    errorMessage.textContent = 'Enter a phone number with enough digits to analyze.';
     errorMessage.hidden = false;
     results.hidden = true;
+    return;
+  }
+  try {
+    await lookup(phone);
+  } catch (error) {
+    errorMessage.textContent = `The lookup could not be completed: ${error.message}`;
+    errorMessage.hidden = false;
   }
 });
 
-document.querySelector('#copy-button').addEventListener('click', async () => {
-  if (!currentResult) return;
-  await navigator.clipboard.writeText(JSON.stringify(currentResult, null, 2));
-  document.querySelector('#copy-button').textContent = 'Copied';
-  setTimeout(() => { document.querySelector('#copy-button').textContent = 'Copy JSON'; }, 1500);
+ownNumberInput.value = localStorage.getItem(ownKey) || '';
+ownNumberInput.addEventListener('change', () => {
+  const value = ownNumberInput.value.trim();
+  if (value) localStorage.setItem(ownKey, value); else localStorage.removeItem(ownKey);
+  if (state) renderRisk();
 });
 
-document.querySelector('#search-button').addEventListener('click', () => {
-  if (!currentResult) return;
-  const query = encodeURIComponent(`"${currentResult.international}"`);
-  window.open(`https://duckduckgo.com/?q=${query}`, '_blank', 'noopener,noreferrer');
+el('#copy-button').addEventListener('click', async () => {
+  if (!state) return;
+  const payload = {
+    input: state.phone.number,
+    ...state.data,
+    valid: state.phone.isValid(),
+    risk: state.verdict ? { score: state.verdict.score, band: state.verdict.band, signals: state.verdict.signals.map((s) => s.label) } : null,
+    callerName: state.cnam?.name || null,
+    listings: state.identity,
+    fccComplaints: state.complaints,
+    sourceStatus: state.status
+  };
+  await navigator.clipboard.writeText(JSON.stringify(payload, null, 2));
+  el('#copy-button').textContent = 'Copied';
+  setTimeout(() => { el('#copy-button').textContent = 'Copy JSON'; }, 1500);
 });
 
-document.querySelector('#business-search-button').addEventListener('click', () => {
-  if (!currentResult) return;
-  const businessResults = document.querySelector('#business-results');
-  const businessStatus = document.querySelector('#business-results-status');
-  const businessContent = document.querySelector('#business-results-content');
-  const query = encodeURIComponent(`"${currentResult.international}" business`);
-  businessResults.hidden = false;
-  businessStatus.textContent = 'Searching...';
-  businessContent.innerHTML = '';
-  fetch(`https://api.duckduckgo.com/?q=${query}&format=json&no_html=1&skip_disambig=1`)
-    .then((response) => {
-      if (!response.ok) throw new Error('DuckDuckGo did not return a response.');
-      return response.json();
-    })
-    .then((payload) => {
-      const items = [];
-      if (payload.AbstractText && payload.AbstractURL) items.push({ title: payload.Heading || 'DuckDuckGo answer', url: payload.AbstractURL, text: payload.AbstractText });
-      const collectTopics = (topics) => topics?.forEach((topic) => topic.Topics ? collectTopics(topic.Topics) : topic.FirstURL && items.push({ title: topic.Text?.split(' - ')[0] || 'Related result', url: topic.FirstURL, text: topic.Text || '' }));
-      collectTopics(payload.RelatedTopics);
-      const uniqueItems = items.filter((item, index, list) => list.findIndex((candidate) => candidate.url === item.url) === index).slice(0, 8);
-      businessStatus.textContent = uniqueItems.length ? `${uniqueItems.length} result${uniqueItems.length === 1 ? '' : 's'} found` : 'No instant-answer results found';
-      businessContent.innerHTML = uniqueItems.length ? uniqueItems.map((item) => `<article class="business-result"><a href="${escapeHTML(item.url)}" target="_blank" rel="noopener noreferrer">${escapeHTML(item.title)}</a><p>${escapeHTML(item.text)}</p></article>`).join('') : '<p class="empty-state">DuckDuckGo returned no business-related instant answers for this number.</p>';
-    })
-    .catch((error) => {
-      businessStatus.textContent = 'Search unavailable';
-      businessContent.innerHTML = `<p class="empty-state">${escapeHTML(error.message)}</p>`;
-    });
+el('#search-button').addEventListener('click', () => {
+  if (!state) return;
+  window.open(`https://duckduckgo.com/?q=${encodeURIComponent(`"${state.phone.formatInternational()}"`)}`, '_blank', 'noopener,noreferrer');
 });
 
-document.querySelector('#clear-button').addEventListener('click', () => { results.hidden = true; input.focus(); });
-document.querySelector('#clear-history').addEventListener('click', () => { localStorage.removeItem(historyKey); renderHistory(); });
-history.addEventListener('click', (event) => { const button = event.target.closest('[data-number]'); if (button) { input.value = button.dataset.number; form.requestSubmit(); } });
+el('#clear-button').addEventListener('click', () => { results.hidden = true; state = null; token += 1; input.focus(); });
+el('#clear-history').addEventListener('click', () => { localStorage.removeItem(historyKey); renderHistory(); });
+history.addEventListener('click', (event) => {
+  const button = event.target.closest('[data-number]');
+  if (button) { input.value = button.dataset.number; form.requestSubmit(); }
+});
 renderHistory();

@@ -73,5 +73,37 @@ input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 2px #b9
 .history-region { color: var(--muted); font-size: 10px; letter-spacing: .08em; text-transform: uppercase; }
 .empty-state { color: var(--muted); font-size: 12px; }
 .site-footer { background: #141414; color: #999; display: flex; font-size: 10px; justify-content: space-between; padding: 25px clamp(22px, 5vw, 72px); }
-@media (max-width: 700px) { .header-note { display: none; } .hero { display: block; padding-bottom: 65px; } .signal-card { margin-top: 52px; } .section-heading { display: block; } .lookup-form { grid-template-columns: 1fr; } .primary-button { width: 100%; } .result-grid, .coverage-grid { grid-template-columns: repeat(2, 1fr); } .result-header { align-items: flex-start; display: block; } .result-actions { flex-wrap: wrap; margin-bottom: 18px; } .site-footer { display: block; line-height: 2; } }
-@media (max-width: 420px) { .result-grid { grid-template-columns: 1fr; } h1 { font-size: 43px; } }
+.own-number-field { display: grid; gap: 7px; margin-top: 18px; max-width: 430px; }
+.own-number-field span { color: var(--ink); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
+.own-number-field em { color: var(--muted); font-style: normal; font-weight: 600; }
+.own-number-field small { color: var(--muted); font-size: 11px; line-height: 1.6; }
+.risk-card { background: #fff; border: 1px solid var(--line); margin-bottom: 18px; padding: 18px; }
+.risk-head { align-items: center; display: flex; justify-content: space-between; margin: -18px -18px 16px; padding: 18px; }
+.risk-head strong { display: block; font-size: 21px; letter-spacing: -.02em; }
+.risk-head .coverage-label { margin-bottom: 7px; opacity: .85; }
+.risk-score { font-weight: 700; line-height: 1; text-align: right; }
+.risk-score span { font-size: 34px; letter-spacing: -.04em; }
+.risk-score small { font-size: 12px; opacity: .7; }
+.risk-clear { background: #e8eeec; color: #1f4436; }
+.risk-caution { background: #f6efd9; color: #5f4a14; }
+.risk-elevated { background: #f7e5dd; color: #71361e; }
+.risk-critical { background: #71361e; color: #fff; }
+.signal-list { display: grid; gap: 1px; list-style: none; margin: 0; padding: 0; }
+.signal { background: #fff; border: 1px solid var(--line); border-left-width: 3px; margin: -1px 0 0; padding: 12px 14px; }
+.signal strong { color: var(--ink); display: block; font-size: 13px; margin-bottom: 4px; }
+.signal span { color: var(--muted); font-size: 11px; line-height: 1.6; }
+.signal-danger { border-left-color: #a33b16; }
+.signal-warn { border-left-color: var(--signal); }
+.signal-good { border-left-color: #2f7a5b; }
+.signal-info { border-left-color: #93a2a6; }
+.warn-note { color: #71361e; }
+.cnam-value { color: var(--ink); font-family: Georgia, serif; font-size: 25px; letter-spacing: -.01em; margin: 0 0 6px; }
+.listing-heading { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 16px; }
+.listing-source { color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .1em; margin: 0 0 5px; text-transform: uppercase; }
+.business-result strong { color: var(--ink); font-size: 13px; }
+.complaint-facts { display: grid; gap: 1px; grid-template-columns: repeat(3, 1fr); margin: 0 0 12px; }
+.complaint-facts > div { background: #fff; border: 1px solid var(--line); margin: -1px 0 0 -1px; padding: 14px; }
+.complaint-facts dt { color: var(--muted); font-size: 9px; font-weight: 700; letter-spacing: .1em; margin-bottom: 8px; text-transform: uppercase; }
+.complaint-facts dd { color: var(--ink); font-size: 19px; font-weight: 600; margin: 0; }
+@media (max-width: 700px) { .header-note { display: none; } .hero { display: block; padding-bottom: 65px; } .signal-card { margin-top: 52px; } .section-heading { display: block; } .lookup-form { grid-template-columns: 1fr; } .primary-button { width: 100%; } .result-grid, .coverage-grid, .complaint-facts { grid-template-columns: repeat(2, 1fr); } .risk-head { display: block; } .risk-score { margin-top: 12px; text-align: left; } .result-header { align-items: flex-start; display: block; } .result-actions { flex-wrap: wrap; margin-bottom: 18px; } .site-footer { display: block; line-height: 2; } }
+@media (max-width: 420px) { .complaint-facts { grid-template-columns: 1fr; } .result-grid { grid-template-columns: 1fr; } h1 { font-size: 43px; } }

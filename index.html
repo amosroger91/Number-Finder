@@ -25,12 +25,12 @@
       <div class="hero-copy">
         <p class="eyebrow">A clearer signal</p>
         <h1 id="page-title">Know the number<br><em>before you answer.</em></h1>
-        <p class="hero-description">A fast, private read on a phone number's numbering plan, format, and likely category. No account. No tracking. No people-search claims.</p>
+        <p class="hero-description">A fast, private read on who a number belongs to and whether it has been reported for fraud. Public records only — FCC complaints, carrier registries and open business data. No account. No tracking.</p>
       </div>
       <div class="signal-card" aria-label="What this tool checks">
         <div class="signal-top"><span class="signal-dot"></span><span>NUMBER INTELLIGENCE</span></div>
-        <div class="signal-line"><span class="line-label">SCOPE</span><strong>FORMAT + VALIDITY</strong></div>
-        <div class="signal-line"><span class="line-label">DATA</span><strong>LIBPHONENUMBER</strong></div>
+        <div class="signal-line"><span class="line-label">SCOPE</span><strong>IDENTITY + RISK</strong></div>
+        <div class="signal-line"><span class="line-label">DATA</span><strong>FCC / OSM / CNAM</strong></div>
         <div class="signal-line"><span class="line-label">STORAGE</span><strong>YOUR BROWSER</strong></div>
       </div>
     </section>
@@ -63,6 +63,11 @@
         <button class="primary-button" type="submit">Analyze number <span aria-hidden="true">↗</span></button>
       </form>
       <p class="form-hint">Use <strong>+</strong> and the country calling code for the most reliable result.</p>
+      <label class="own-number-field">
+        <span>Your own number <em>(optional)</em></span>
+        <input id="own-number" name="own-number" type="tel" inputmode="tel" placeholder="+1 479 555 0100" autocomplete="off">
+        <small>Stored only in this browser and never sent anywhere. Used to detect neighbour spoofing, where a caller forges an ID matching your own exchange.</small>
+      </label>
       <p id="error-message" class="error-message" role="alert" hidden></p>
 
       <div id="results" class="results" hidden>
@@ -72,36 +77,31 @@
             <h2 id="result-title">Number details</h2>
           </div>
           <div class="result-actions">
-            <button id="business-search-button" class="text-button" type="button">Find business</button>
             <button id="search-button" class="text-button" type="button">Search DuckDuckGo</button>
             <button id="copy-button" class="text-button" type="button">Copy JSON</button>
             <button id="clear-button" class="text-button" type="button">Clear</button>
           </div>
         </div>
         <div id="status-banner" class="status-banner"></div>
+        <section id="risk-card" class="risk-card" aria-live="polite"></section>
+        <section id="identity-card" class="business-results" aria-live="polite"></section>
+        <section id="complaint-card" class="business-results" aria-live="polite"></section>
         <div id="result-grid" class="result-grid"></div>
-        <section id="business-results" class="business-results" hidden aria-live="polite">
-          <div class="business-results-heading">
-            <p class="coverage-label">DuckDuckGo business search</p>
-            <strong id="business-results-status">Not searched</strong>
-          </div>
-          <div id="business-results-content"></div>
-        </section>
         <div class="coverage-grid">
           <article class="coverage-card">
             <p class="coverage-label">Carrier confidence</p>
-            <strong>Prefix metadata</strong>
-            <p>The carrier shown above is the original carrier assigned to the number range. Porting may make the current carrier different.</p>
+            <strong>Block allocation, not live routing</strong>
+            <p>Carrier and rate centre come from published NANPA block allocations: the operator a range was assigned to, not necessarily who carries the number now. No keyless source exposes live routing, so a ported number reads as its original carrier.</p>
           </article>
           <article class="coverage-card">
-            <p class="coverage-label">Scam reputation</p>
-            <strong>Not checked</strong>
-            <p>No reputation database is bundled into this static site. A valid number can still be used for spam or fraud.</p>
+            <p class="coverage-label">What a clean result means</p>
+            <strong>Absence of evidence only</strong>
+            <p>Most fraud comes from numbers with no history at all, because they are discarded after a few days. No complaints on file is not a safety rating.</p>
           </article>
         </div>
         <div class="privacy-callout">
           <span class="callout-icon" aria-hidden="true">i</span>
-          <p><strong>What this does not reveal:</strong> a private owner's name, live location, address, or identity. The business search only helps locate publicly indexed business listings; results are supplied by DuckDuckGo, not this app.</p>
+          <p><strong>What this does not reveal:</strong> a private owner's name, live location, address, or identity. Registry listings cover organisations, not individuals. Caller ID is trivially forged, so every result here describes the <em>number</em> shown, not the person actually dialling.</p>
         </div>
       </div>
     </section>

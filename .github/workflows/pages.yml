@@ -23,6 +23,15 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      # Refreshes the offline area-code table so a newly activated area code is not reported as
+      # spoofed. The generated file is committed too, so the site still works if this step fails.
+      - name: Refresh NANP data
+        run: node data/build-nanp.mjs
+        continue-on-error: true
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site
