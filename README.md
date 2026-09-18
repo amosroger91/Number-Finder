@@ -10,7 +10,7 @@ Runs entirely in the browser. No account, no server, no database, no tracking, a
 
 ## What it can do
 
-- **Identify organisations.** Resolves a number to a business or institution via OpenStreetMap, Wikidata, SEC filings and the carrier caller-name database.
+- **Identify organisations.** Resolves a number to a business or institution via OpenStreetMap, Wikidata, SEC filings, the national healthcare provider registry, and the carrier caller-name database.
 - **Prove some caller IDs are forged.** Unassigned area codes and exchanges, reserved ranges and placeholder digit runs are *conclusive* — no carrier can originate such a call.
 - **Detect neighbour spoofing.** Save your own number and any caller ID sharing your exchange is flagged. This is the most common spoofing tactic.
 - **Report federal complaint history from two independent systems.** ~1.8M FCC unwanted-call complaints reaching back years, plus FTC Do Not Call reports covering the last few weeks. A number appearing in **both** is called out as its own signal.
@@ -43,6 +43,7 @@ Runs entirely in the browser. No account, no server, no database, no tracking, a
 | **Overpass / OpenStreetMap** | `overpass-api.de/api/interpreter` (+2 mirrors) | Direct | Business name, address, website, category |
 | **Wikidata** | `query.wikidata.org/sparql` | Direct | Organisations via property `P1329`, plus website (`P856`) and type (`P31`) |
 | **SEC EDGAR** | `efts.sec.gov/LATEST/search-index` | Relayed | Public companies and registrants whose filings print the number |
+| **CMS NPPES** | `download.cms.gov/nppes/` | Build-time | Healthcare organisations: practice name, NPI, city/state, specialty |
 
 ### Risk and carrier
 
@@ -61,6 +62,7 @@ Runs entirely in the browser. No account, no server, no database, no tracking, a
 | **Area-Code-Geolocation-Database** | `raw.githubusercontent.com/ravisorg/...` | Direct | Area-code geography; build input for `data/nanp.json` |
 | **`data/nanp.json`** | bundled, generated | None | 336 NANP area codes for offline structural checks |
 | **`data/ftc/`** | generated in CI | None | ~264k numbers sharded by NPA + exchange digit |
+| **`data/nppes/`** | generated in CI | None | Healthcare organisations, same shard geometry |
 
 Relays used for the two CORS-less sources: `r.jina.ai`, then `api.allorigins.win`.
 
@@ -89,6 +91,12 @@ Relays used for the two CORS-less sources: `r.jina.ai`, then `api.allorigins.win
 The files serve **no CORS headers**, and the official `api.ftc.gov` endpoint requires an API key — and returned visibly misaligned fields when tested — so neither can be queried from the browser. Instead `data/build-ftc.mjs` folds the published window into static shards at build time: currently 27 days, 322,876 reports, 263,501 distinct numbers, ~30 MB across 3,899 shards with the largest at 295 kB.
 
 *This is a recency signal, not a history.* The published window is about five weeks, so the two federal datasets answer different questions — the FCC's top robocaller in this repo's tests (715 complaints, last active 2021) does not appear in the FTC window at all. **The totals are never added together**: a consumer may report the same call to both agencies, so summing would double-count. The heavier of the two is scored, the other is shown beside it, and appearing in both is its own signal.
+
+**CMS NPPES** — the national provider registry, published as a **1.08 GB monthly ZIP** containing a multi-gigabyte CSV of ~330 columns. The keyless NPI API cannot search by phone number, so reverse lookup requires the bulk file, which is too large to query live and far too large to commit. `data/build-nppes.mjs` streams it (`unzip -p` piped into a parser that splits only as far as the last column of interest, never extracting the CSV to disk, which would need ~10 GB of scratch space) and reduces it to the same shard geometry as the FTC data.
+
+**Only Entity Type 2 — organisations — is indexed.** Type 1 records are individual clinicians, and this project does not identify private individuals. For the same reason the *Authorized Official Telephone Number* column is skipped even on organisation records: it is a named person's direct line, not the organisation's published number. Deactivated NPIs are dropped, and registry placeholders like `0000000000` are rejected by NANP structural rules.
+
+Because the archive is ~1.1 GB, CI caches the result on **the archive's own filename** rather than a date — CMS publishes mid-month, so a calendar-month key would keep serving the previous file for a fortnight after a new one appeared. Taxonomy codes are resolved to readable specialties via the NUCC crosswalk (884 codes); if that fetch fails the raw code is published instead rather than failing the build.
 
 **libphonenumber-geo-carrier** — note that `carrier/en/1.bson` contains only 696 keys, all Caribbean NANP. There is **no US/Canada carrier data** in this dataset, which is why areacode.fyi is required. Geocode keys omit the country code (`479273` → `Bentonville, AR`); `timezones.bson` is one global file. The BSON decoder is loaded lazily.
 
@@ -214,7 +222,9 @@ evidence.js          Identity confidence across sources
 data/nanp.json       Generated area-code table (committed)
 data/build-nanp.mjs  Regenerates the table; run by CI on deploy
 data/build-ftc.mjs   Builds FTC complaint shards; run by CI on deploy
+data/build-nppes.mjs Builds NPPES organisation shards; cached monthly in CI
 data/ftc/            Generated FTC shards (gitignored, published by CI)
+data/nppes/          Generated NPPES shards (gitignored, published by CI)
 vendor/              Vendored libphonenumber-js
 ```
 
@@ -226,7 +236,6 @@ Measured, viable, and deliberately deferred rather than forgotten:
 
 | Source | Size / shape | What it would add |
 | --- | --- | --- |
-| **CMS NPPES** | 1.08 GB monthly ZIP (`NPPES_Data_Dissemination_September_2026_V2.zip`, verified) | Reverse lookup for healthcare organisations. The keyless NPI API cannot search by phone, so this needs the bulk file processed in CI. Indexing **Type 2 (organisational) NPIs only** keeps it consistent with the no-private-individuals rule. |
 | **IRS Form 990** | XML corpus, per-year | Nonprofits, foundations, churches and universities — the whole sector SEC EDGAR misses. Form 990 carries the organisation's public telephone number. |
 | **FCC ULS** | Bulk licence files | Broadcasters, telecom and public-safety licensees. Contains individuals as well, so the same organisation-only filter would apply. |
 | **NANPA (official)** | `reports.nanpa.com` ZIPs | `data/nanp.json` is currently built from an open mirror. The official site is reachable at **nanpa.com** (the older `nationalnanpa.com` is not, which is why an earlier attempt failed), so CI could prefer NANPA and fall back to the mirror. |

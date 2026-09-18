@@ -113,6 +113,7 @@ function identityRow(entry) {
     <p class="listing-source">${escapeHTML(entry.source)}${entry.count ? ` &middot; ${entry.count} filing${entry.count === 1 ? '' : 's'}` : ''}</p>
     ${url ? `<a href="${escapeHTML(url)}" target="_blank" rel="noopener noreferrer">${title}</a>` : `<strong>${title}</strong>`}
     ${meta ? `<p>${meta}</p>` : ''}
+    ${entry.note ? `<p>${escapeHTML(entry.note)}</p>` : ''}
     ${site ? `<p><a href="${escapeHTML(site)}" target="_blank" rel="noopener noreferrer">${escapeHTML(site)}</a></p>` : ''}
   </article>`;
 }
@@ -149,6 +150,7 @@ function renderIdentity() {
       OpenStreetMap: state.raw.osm,
       Wikidata: state.raw.wikidata,
       'SEC EDGAR': state.raw.sec,
+      'CMS NPPES': state.raw.nppes,
       'caller name': state.raw.cnam
     }
   });
@@ -180,7 +182,7 @@ function renderIdentity() {
       <strong>${identity?.length ? `${identity.length} match${identity.length === 1 ? '' : 'es'}` : status.listings === PENDING ? 'Searching' : 'None'}</strong>
     </div>
     ${listings}
-    <p class="source-note">Sources: FreeCNAM, OpenStreetMap, Wikidata and SEC EDGAR. These list organisations, not private individuals.</p>`;
+    <p class="source-note">Sources: FreeCNAM, OpenStreetMap, Wikidata, SEC EDGAR and CMS NPPES. These list organisations, not private individuals.</p>`;
 }
 
 // The FTC block is rendered separately from the FCC block and the totals are never added together:
@@ -292,7 +294,7 @@ function renderAll() {
 // it is only reported unavailable when every source behind it failed.
 const GROUPS = {
   'caller name': ['cnam'],
-  listings: ['osm', 'wikidata', 'sec'],
+  listings: ['osm', 'wikidata', 'sec', 'nppes'],
   'FCC complaints': ['fcc', 'fccAdvertisers'],
   'FTC reports': ['ftc'],
   'carrier records': ['exchange']
@@ -347,7 +349,7 @@ async function lookup(phone) {
     geo: null,
     timezones: null,
     carrier: null,
-    raw: { cnam: PENDING, osm: PENDING, wikidata: PENDING, sec: PENDING, fcc: PENDING, fccAdvertisers: PENDING, ftc: PENDING, exchange: PENDING },
+    raw: { cnam: PENDING, osm: PENDING, wikidata: PENDING, sec: PENDING, nppes: PENDING, fcc: PENDING, fccAdvertisers: PENDING, ftc: PENDING, exchange: PENDING },
     status: {}
   };
   syncStatus();
@@ -380,6 +382,7 @@ async function lookup(phone) {
     track('osm', sources.osmListings(phone), addListings),
     track('wikidata', sources.wikidataListings(phone), addListings),
     track('sec', sources.secFilings(phone), addListings),
+    track('nppes', sources.nppesOrganisations(phone), addListings),
     sources.prefixMetadata('geocodes', phone.countryCallingCode, phone.nationalNumber)
       .then((value) => { if (value) state.geo = value; })
       .catch(() => sources.areaCodeLocation(phone).then((value) => { if (value) state.geo = value; }).catch(() => {})),

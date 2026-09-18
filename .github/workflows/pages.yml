@@ -38,6 +38,24 @@ jobs:
       - name: Build FTC complaint shards
         run: node data/build-ftc.mjs
         continue-on-error: true
+      # NPPES is a ~1.1GB monthly download, so it is cached on the archive's own filename rather
+      # than a date: CMS publishes mid-month, and a calendar-month key would keep serving the
+      # previous file for two weeks after a new one appeared.
+      - name: Resolve NPPES archive
+        id: nppes
+        run: echo "archive=$(node data/build-nppes.mjs --resolve)" >> "$GITHUB_OUTPUT"
+        continue-on-error: true
+      - name: Restore NPPES shards
+        id: nppes-cache
+        uses: actions/cache@v4
+        with:
+          path: data/nppes
+          key: nppes-${{ steps.nppes.outputs.archive }}
+      # Raised heap: the index holds well over a million organisations, which exhausts V8's default.
+      - name: Build NPPES organisation shards
+        if: steps.nppes-cache.outputs.cache-hit != 'true' && steps.nppes.outputs.archive != ''
+        run: node --max-old-space-size=6144 data/build-nppes.mjs
+        continue-on-error: true
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site

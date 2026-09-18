@@ -10,3 +10,4 @@ Thumbs.db
 # Generated in CI and published with the site; too large to track in git.
 data/ftc/
 data/nppes/
+data/*.zip

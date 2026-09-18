@@ -168,6 +168,38 @@ export function ftcWindow() {
   return once('ftc:index', async () => (await request(new URL('./data/ftc/index.json', import.meta.url))).json());
 }
 
+// --- CMS NPPES healthcare organisations ---------------------------------------------------------
+// The national provider registry, reduced to organisational records indexed by telephone number by
+// `data/build-nppes.mjs` and published as shards. Individual clinicians (Entity Type 1) are not
+// indexed, so this identifies practices, clinics and hospitals rather than people.
+
+export function nppesOrganisations(phone) {
+  const national = phone.nationalNumber;
+  if (phone.countryCallingCode !== '1' || national.length !== 10) return Promise.resolve([]);
+  return once(`nppes:${national}`, async () => {
+    const shard = new URL(`./data/nppes/${national.slice(0, 3)}/${national[3]}.json`, import.meta.url);
+    const response = await fetch(shard);
+    // As with the FTC shards, a missing file is a definitive "no record"; anything else is unknown.
+    if (response.status === 404) return [];
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    const entry = (await response.json())[national];
+    if (!entry) return [];
+    const list = Array.isArray(entry) ? entry : entry.o;
+    const more = Array.isArray(entry) ? 0 : entry.more || 0;
+    return list.map(([name, npi, city, state, taxonomy], index) => ({
+      source: 'CMS NPPES',
+      name,
+      kind: taxonomy || 'Healthcare organisation',
+      address: [city, state].filter(Boolean).join(', ') || null,
+      website: null,
+      phone: null,
+      // Only mentioned once, on the last row, so a shared switchboard reads honestly.
+      note: index === list.length - 1 && more ? `and ${more} further registered organisation${more === 1 ? '' : 's'} on this number` : null,
+      url: `https://npiregistry.cms.hhs.gov/provider-view/${npi}`
+    }));
+  });
+}
+
 // --- OpenStreetMap via Overpass --------------------------------------------------------------
 // Matching is by exact tag value across every common spelling of the number, which is indexed and
 // returns in about a second.
