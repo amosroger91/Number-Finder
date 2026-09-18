@@ -187,7 +187,20 @@ Then visit `http://localhost:8000`. Opening `index.html` over `file://` will not
 
 ## GitHub Pages
 
-Push to GitHub, then set **Settings → Pages → Source** to **GitHub Actions**. The included workflow deploys every push to `main`, regenerating `data/nanp.json` first so a newly activated area code is never reported as spoofed.
+Set **Settings → Pages → Source** to **GitHub Actions** — not "Deploy from a branch".
+
+This is load-bearing and fails silently if you get it wrong. With a branch source, Pages serves the
+committed tree and **ignores the workflow artifact entirely**, while the workflow still reports a
+green tick on every run. Everything keeps working right up until a build step generates a file that
+is not committed — `data/ftc/` — which then 404s in production with nothing in the logs to explain
+it. The API tells you which mode you are in:
+
+```text
+GET /repos/{owner}/{repo}/pages   ->   "build_type": "workflow"   (correct)
+                                       "build_type": "legacy"     (serving the branch)
+```
+
+The workflow deploys every push to `main`, regenerating `data/nanp.json` and `data/ftc/` first.
 
 ## Project structure
 
@@ -206,6 +219,20 @@ vendor/              Vendored libphonenumber-js
 ```
 
 Regenerate the offline table with `node data/build-nanp.mjs`.
+
+## Evaluated but not yet implemented
+
+Measured, viable, and deliberately deferred rather than forgotten:
+
+| Source | Size / shape | What it would add |
+| --- | --- | --- |
+| **CMS NPPES** | 1.08 GB monthly ZIP (`NPPES_Data_Dissemination_September_2026_V2.zip`, verified) | Reverse lookup for healthcare organisations. The keyless NPI API cannot search by phone, so this needs the bulk file processed in CI. Indexing **Type 2 (organisational) NPIs only** keeps it consistent with the no-private-individuals rule. |
+| **IRS Form 990** | XML corpus, per-year | Nonprofits, foundations, churches and universities — the whole sector SEC EDGAR misses. Form 990 carries the organisation's public telephone number. |
+| **FCC ULS** | Bulk licence files | Broadcasters, telecom and public-safety licensees. Contains individuals as well, so the same organisation-only filter would apply. |
+| **NANPA (official)** | `reports.nanpa.com` ZIPs | `data/nanp.json` is currently built from an open mirror. The official site is reachable at **nanpa.com** (the older `nationalnanpa.com` is not, which is why an earlier attempt failed), so CI could prefer NANPA and fall back to the mirror. |
+
+All four are CI-preprocessing jobs of the same shape as `build-ftc.mjs`: too large to query live, too
+large to commit, so they would be generated into the Pages artifact and sharded for lookup.
 
 ## Privacy
 
