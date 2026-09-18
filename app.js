@@ -138,11 +138,19 @@ function renderIdentity() {
 
   // Synthesised across every identity source, because agreement between independent registries is
   // a stronger claim than anything one of them says on its own.
+  // Per source, not per group. Grouping hides a partial failure: if SEC answers while OpenStreetMap
+  // is down, the group reads OK and the interface would imply every registry was consulted. The
+  // confidence a reader places in "one source agreed" depends on knowing the others were asked.
   const confidence = identityConfidence({
     listings: identity || [],
     cnam,
     generic,
-    status: { 'registry listings': status.listings, 'caller name': status['caller name'] }
+    status: {
+      OpenStreetMap: state.raw.osm,
+      Wikidata: state.raw.wikidata,
+      'SEC EDGAR': state.raw.sec,
+      'caller name': state.raw.cnam
+    }
   });
   state.confidence = confidence;
   const FILLED = { confirmed: 5, strong: 4, possible: 2, conflicting: 2, unknown: 0 }[confidence.band];
