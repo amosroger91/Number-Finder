@@ -5,6 +5,7 @@ import { parsePhoneNumberFromString } from './vendor/libphonenumber-js.min.mjs';
 import * as sources from './sources.js';
 import { assess } from './risk.js';
 import { identityConfidence } from './evidence.js';
+import { assume, loadAgent } from './agent.js';
 
 const el = (id) => document.querySelector(id);
 const form = el('#lookup-form');
@@ -16,6 +17,7 @@ const resultTitle = el('#result-title');
 const resultGrid = el('#result-grid');
 const statusBanner = el('#status-banner');
 const history = el('#history');
+const assumptionCard = el('#assumption-card');
 const riskCard = el('#risk-card');
 const identityCard = el('#identity-card');
 const complaintCard = el('#complaint-card');
@@ -78,6 +80,34 @@ function ownDigits() {
 }
 
 // --- Rendering ---------------------------------------------------------------------------------
+
+
+function renderAssumption() {
+  if (!state) return;
+  const result = assume(state);
+  state.assumption = result;
+  const tone = ({ scam: 'danger', company: 'good', person: 'info', unknown: 'info' })[result.kind] || 'info';
+  const reasons = result.reasons.length
+    ? result.reasons.map((entry) => `<li class="signal signal-${tone}"><strong>${escapeHTML(entry.label)}</strong><span>${escapeHTML(entry.detail)}</span></li>`).join('')
+    : '';
+  const caveats = result.caveats.map((text) => `<p class="source-note">${escapeHTML(text)}</p>`).join('');
+  const name = result.name ? `<p class="confidence-name">${escapeHTML(result.name)}</p>` : '';
+  const meter = result.status === 'ok'
+    ? `<span class="assumption-confidence">${escapeHTML(result.confidenceLabel)} confidence</span>`
+    : '';
+  assumptionCard.innerHTML = `
+    <div class="assumption-head assumption-${escapeHTML(result.kind)}${result.status === 'failed' ? ' assumption-failed' : ''}">
+      <div>
+        <p class="coverage-label">Working assumption</p>
+        <strong>${escapeHTML(result.headline)}</strong>
+      </div>
+      ${meter}
+    </div>
+    ${name}
+    <p class="source-note">${escapeHTML(result.detail)}</p>
+    ${reasons ? `<ul class="signal-list">${reasons}</ul>` : ''}
+    ${caveats}`;
+}
 
 function renderRisk() {
   const { phone, digits, nanp, prefix, complaints, ftc, identity, status } = state;
@@ -284,6 +314,7 @@ function renderAll() {
   renderGrid();
   renderRisk();
   renderIdentity();
+  renderAssumption();
   renderComplaints();
 }
 
@@ -449,6 +480,7 @@ el('#copy-button').addEventListener('click', async () => {
     callerName: state.cnam?.name || null,
     listings: state.identity,
     identityConfidence: state.confidence ? { band: state.confidence.band, name: state.confidence.name, agreeing: state.confidence.agreeing } : null,
+    assumption: state.assumption ? { kind: state.assumption.kind, confidence: state.assumption.confidence, headline: state.assumption.headline, name: state.assumption.name, reasons: state.assumption.reasons.map((entry) => entry.label) } : null,
     fccComplaints: state.complaints,
     ftcReports: state.ftc,
     sourceStatus: state.status
@@ -470,3 +502,5 @@ history.addEventListener('click', (event) => {
   if (button) { input.value = button.dataset.number; form.requestSubmit(); }
 });
 renderHistory();
+
+loadAgent().then(() => { if (state) renderAll(); });

@@ -115,5 +115,15 @@ input:focus, select:focus { border-color: var(--blue); box-shadow: 0 0 0 2px #b9
 .confidence-conflicting { background: #f7e5dd; color: #71361e; }
 .confidence-unknown { background: #eef0ef; color: var(--muted); }
 .confidence-name { color: var(--ink); font-family: Georgia, serif; font-size: 25px; letter-spacing: -.01em; margin: 0 0 8px; }
-@media (max-width: 700px) { .header-note { display: none; } .hero { display: block; padding-bottom: 65px; } .signal-card { margin-top: 52px; } .section-heading { display: block; } .lookup-form { grid-template-columns: 1fr; } .primary-button { width: 100%; } .result-grid, .coverage-grid, .complaint-facts { grid-template-columns: repeat(2, 1fr); } .risk-head, .confidence-head { display: block; } .confidence-meter { display: inline-block; margin-top: 10px; } .risk-score { margin-top: 12px; text-align: left; } .result-header { align-items: flex-start; display: block; } .result-actions { flex-wrap: wrap; margin-bottom: 18px; } .site-footer { display: block; line-height: 2; } }
+
+.assumption-card { background: #fff; border: 1px solid var(--line); margin-bottom: 18px; padding: 18px; }
+.assumption-head { align-items: center; display: flex; justify-content: space-between; margin: -18px -18px 16px; padding: 18px; }
+.assumption-head strong { display: block; font-size: 21px; letter-spacing: -.02em; }
+.assumption-head .coverage-label { margin-bottom: 7px; opacity: .85; }
+.assumption-confidence { font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; opacity: .85; }
+.assumption-company { background: #e8eeec; color: #1f4436; }
+.assumption-person { background: #eef3f7; color: #124968; }
+.assumption-scam { background: #71361e; color: #fff; }
+.assumption-unknown, .assumption-failed { background: #eef0ef; color: var(--muted); }
+@media (max-width: 700px) { .header-note { display: none; } .hero { display: block; padding-bottom: 65px; } .signal-card { margin-top: 52px; } .section-heading { display: block; } .lookup-form { grid-template-columns: 1fr; } .primary-button { width: 100%; } .result-grid, .coverage-grid, .complaint-facts { grid-template-columns: repeat(2, 1fr); } .risk-head, .confidence-head, .assumption-head { display: block; } .confidence-meter { display: inline-block; margin-top: 10px; } .assumption-confidence { display: inline-block; margin-top: 10px; } .risk-score { margin-top: 12px; text-align: left; } .result-header { align-items: flex-start; display: block; } .result-actions { flex-wrap: wrap; margin-bottom: 18px; } .site-footer { display: block; line-height: 2; } }
 @media (max-width: 420px) { .complaint-facts { grid-template-columns: 1fr; } .result-grid { grid-template-columns: 1fr; } h1 { font-size: 43px; } }

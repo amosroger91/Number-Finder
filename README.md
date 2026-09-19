@@ -14,6 +14,7 @@ Runs entirely in the browser. No account, no server, no database, no tracking, a
 - **Prove some caller IDs are forged.** Unassigned area codes and exchanges, reserved ranges and placeholder digit runs are *conclusive* — no carrier can originate such a call.
 - **Detect neighbour spoofing.** Save your own number and any caller ID sharing your exchange is flagged. This is the most common spoofing tactic.
 - **Report federal complaint history from two independent systems.** ~1.8M FCC unwanted-call complaints reaching back years, plus FTC Do Not Call reports covering the last few weeks. A number appearing in **both** is called out as its own signal.
+- **Assume a kind.** A local WASM agent reads the other sections and offers a working assumption — personal line, published organisation, scam line, or unknown — with the signals it used. "Person" means the number looks like a personal line, not that the subscriber has been identified.
 - **Synthesise identity across sources.** Rather than listing what each registry said, it reports whether they *agree*, in explainable bands (Confirmed / Strong / Possible / Conflicting / Unknown) that count distinct sources, never a fabricated percentage.
 - **Answer "on behalf of who".** The FCC dataset records the business a complainant said a call was made *for*, queried in both directions.
 - **Work offline.** Parsing, formatting and all structural spoof checks run with no network at all. A verdict is always produced.
@@ -21,7 +22,7 @@ Runs entirely in the browser. No account, no server, no database, no tracking, a
 
 ## What it cannot do
 
-- **Identify a private individual.** Registry lookups cover organisations. Most personal and mobile lines appear in no public dataset. This is a deliberate limit, not a gap to be filled.
+- **Identify a private individual.** Registry lookups cover organisations. Most personal and mobile lines appear in no public dataset. This is a deliberate limit, not a gap to be filled. A "likely personal line" assumption is a line-type guess, not a name.
 - **Tell you who is actually calling.** Caller ID is trivially forged. Every result describes the *number displayed*, not the person dialling.
 - **Give you the current carrier.** Both carrier sources report the block a number was *allocated* to. After two decades of portability that is routinely not who carries it today, and no keyless source exposes live routing.
 - **Prove a number is safe.** A clean result is an absence of evidence. Most fraud comes from numbers with no history at all, because they are discarded within days.
@@ -171,13 +172,35 @@ a conflict: a corporate switchboard legitimately resolves to the company, its fo
 officers' filings, and calling that "conflicting" would penalise exactly the large, well-documented
 organisations the registries describe best. Conflict requires *independent sources* to disagree.
 
+## Kind assumption
+
+`agent.js` plus `vendor/agent.wasm` synthesise the other sections into one working
+assumption: **person**, **company**, **scam**, or **unknown**. The WASM module sees only
+an integer feature vector — it cannot fetch — and returns a kind, a confidence band
+(high / medium / low, never a percentage), and a mask of which signals fired.
+
+| Label | Means |
+| --- | --- |
+| **Company** | Public records point at a published organisation |
+| **Likely personal line** | Wireless / generic CNAM / personal-shaped CNAM, and no org listing. Not a named subscriber |
+| **Scam indicators** | The *number* looks like a scam line (unassigned, placeholder, complaint mill, impersonation, premium-rate) |
+| **Unknown** | Not enough independent signal, sources conflict, or registries could not be checked |
+
+Two rules borrowed from the rest of the app. A confirmed or strong organisation with
+complaints stays **company** — the risk card already shows the heat, and spoofers
+display listed numbers. Own-number and neighbour-spoof stay on the risk card: they
+mean this *call* is forged, not that the looked-up number is a scam operation.
+
+Rebuild with `npm run build:agent`. Run the decision table with `npm test`.
+
 ## Architecture
 
 ```text
 Browser -> index.html -> app.js ---> sources.js  -> keyless public APIs
                               \----> risk.js     -> offline scam scoring
                               \----> evidence.js -> identity confidence
-                              \----> data/nanp.json, data/ftc/  (generated)
+                              \----> agent.js    -> WASM kind assumption (person / company / scam / unknown)
+                              \----> data/nanp.json, data/ftc/, data/nppes/  (generated)
                               \----> localStorage (recent checks, your own number)
 ```
 
@@ -219,16 +242,19 @@ app.js               Orchestration, progressive rendering, interaction
 sources.js           Keyless external data sources
 risk.js              Offline scam scoring
 evidence.js          Identity confidence across sources
+agent.js             Host for the WASM kind-assumption agent
+agent/               AssemblyScript source and tests for the agent
+vendor/              Vendored libphonenumber-js and agent.wasm
+package.json         AssemblyScript toolchain for rebuilding agent.wasm
 data/nanp.json       Generated area-code table (committed)
 data/build-nanp.mjs  Regenerates the table; run by CI on deploy
 data/build-ftc.mjs   Builds FTC complaint shards; run by CI on deploy
 data/build-nppes.mjs Builds NPPES organisation shards; cached monthly in CI
 data/ftc/            Generated FTC shards (gitignored, published by CI)
 data/nppes/          Generated NPPES shards (gitignored, published by CI)
-vendor/              Vendored libphonenumber-js
 ```
 
-Regenerate the offline table with `node data/build-nanp.mjs`.
+Regenerate the offline table with `node data/build-nanp.mjs`. Rebuild the kind-assumption agent with `npm run build:agent`; `npm test` runs the decision table.
 
 ## Evaluated but not yet implemented
 

@@ -1,0 +1,12 @@
+{
+  "name": "number-finder",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build:agent": "asc agent/classify.ts -o vendor/agent.wasm -O --runtime stub --noAssert",
+    "test": "npm run build:agent && node --test agent/classify.test.mjs"
+  },
+  "devDependencies": {
+    "assemblyscript": "^0.27.36"
+  }
+}

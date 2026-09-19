@@ -56,6 +56,13 @@ jobs:
         if: steps.nppes-cache.outputs.cache-hit != 'true' && steps.nppes.outputs.archive != ''
         run: node --max-old-space-size=6144 data/build-nppes.mjs
         continue-on-error: true
+      # Rebuild the kind-assumption WASM from AssemblyScript. The committed
+      # vendor/agent.wasm is used if this step fails, so the site still deploys.
+      - name: Build WASM agent
+        run: npm ci && npm run build:agent
+        continue-on-error: true
+      - name: Drop node_modules before Pages upload
+        run: rm -rf node_modules
       - name: Configure Pages
         uses: actions/configure-pages@v5
       - name: Upload site
